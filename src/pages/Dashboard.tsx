@@ -9,6 +9,7 @@ export default function Dashboard({
   loading,
   colorizing,
   seeding,
+  resetting,
   settingUp,
   sendingEmail,
   emailStatus,
@@ -16,6 +17,7 @@ export default function Dashboard({
   colorSpreadsheet,
   sendAlertEmail,
   importSeedProducts,
+  resetAndSeed,
   setupSheet,
 }: InventoryHook) {
   const total   = produtos.filter((p) => p.ativo).length;
@@ -120,15 +122,28 @@ export default function Dashboard({
       )}
 
       {alreadySeeded && (
-        <div style={{ marginBottom: 20 }}>
+        <div style={{ marginBottom: 20, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <button
             className="btn btn-secondary"
             style={{ fontSize: 12 }}
             onClick={importSeedProducts}
-            disabled={seeding || loading}
-            title="Adiciona os produtos padrão ao catálogo existente"
+            disabled={seeding || resetting || loading}
+            title="Adiciona os produtos padrão ao catálogo existente (sem apagar os atuais)"
           >
             {seeding ? "Importando..." : `+ Adicionar catálogo padrão (${SEED_PRODUCTS.length} itens)`}
+          </button>
+          <button
+            className="btn btn-primary"
+            style={{ fontSize: 12 }}
+            onClick={() => {
+              if (confirm("Isso vai apagar TODOS os produtos e movimentações da planilha e reimportar o catálogo padrão com o estoque fictício. Confirmar?")) {
+                resetAndSeed();
+              }
+            }}
+            disabled={resetting || seeding || loading}
+            title="Limpa a planilha inteira e reimporta o catálogo com quantidades de estoque definidas"
+          >
+            {resetting ? "Resetando planilha..." : `↺ Resetar e reimportar catálogo (${SEED_PRODUCTS.length} itens)`}
           </button>
         </div>
       )}

@@ -4,7 +4,7 @@
  */
 
 import { getToken } from "./auth";
-import type { Movimentacao, Produto } from "../types";
+import type { Funcionario, LancamentoFinanceiro, Movimentacao, Produto } from "../types";
 
 const BASE = "https://sheets.googleapis.com/v4/spreadsheets";
 
@@ -12,6 +12,9 @@ const BASE = "https://sheets.googleapis.com/v4/spreadsheets";
 export const SHEET_PRODUTOS       = "Produtos";
 export const SHEET_MOVIMENTACOES  = "Movimentações";
 export const SHEET_RESUMO         = "Resumo";
+export const SHEET_POR_PRODUTO    = "Por Produto";
+export const SHEET_FUNCIONARIOS   = "Funcionários";
+export const SHEET_FINANCEIRO     = "Financeiro";
 
 const HEADERS_PRODUTOS = [
   "ID", "Nome", "SKU", "Categoria", "Unidade",
@@ -22,6 +25,12 @@ const HEADERS_MOVIMENTACOES = [
   "ID", "Data/Hora", "Produto ID", "Produto Nome", "Tipo",
   "Quantidade", "Saldo Anterior", "Saldo Posterior",
   "Responsável", "Motivo", "Documento",
+];
+const HEADERS_FUNCIONARIOS = [
+  "ID", "Nome", "Cargo", "Email", "Telefone", "Salário", "Status", "Criado Em",
+];
+const HEADERS_FINANCEIRO = [
+  "ID", "Data/Hora", "Tipo", "Categoria", "Descrição", "Valor", "Responsável", "Documento",
 ];
 
 // ── HTTP helper ───────────────────────────────────────────────────────────────
@@ -92,12 +101,30 @@ export async function ensureSheets(spreadsheetId: string): Promise<void> {
 }
 
 // ── Leitura ───────────────────────────────────────────────────────────────────
-type ValuesResponse = { values?: string[][] };
+// UNFORMATTED_VALUE garante:
+//  • Números chegam como number (sem formatação de separador de milhar que quebraria parseFloat)
+//  • Booleanos chegam como boolean true/false (não string "TRUE"/"FALSE")
+type CellValue = string | number | boolean | null;
+type ValuesResponse = { values?: CellValue[][] };
 
-async function getValues(spreadsheetId: string, range: string): Promise<string[][]> {
+function str(v: CellValue): string {
+  return v == null ? "" : String(v);
+}
+function num(v: CellValue): number {
+  const n = Number(v);
+  return isNaN(n) ? 0 : n;
+}
+function bool(v: CellValue): boolean {
+  // Trata boolean true, string "TRUE"/"true", número 1
+  if (v === true || v === 1) return true;
+  if (typeof v === "string") return v.toUpperCase() === "TRUE";
+  return false;
+}
+
+async function getValues(spreadsheetId: string, range: string): Promise<CellValue[][]> {
   const data = await req<ValuesResponse>(
     "GET",
-    `/${spreadsheetId}/values/${encodeURIComponent(range)}`
+    `/${spreadsheetId}/values/${encodeURIComponent(range)}?valueRenderOption=UNFORMATTED_VALUE`
   );
   return (data.values ?? []).slice(1);
 }
@@ -107,18 +134,18 @@ export async function loadProdutos(spreadsheetId: string): Promise<Produto[]> {
   return rows
     .filter((r) => r[0])
     .map((r, i) => ({
-      id: r[0] ?? "",
-      nome: r[1] ?? "",
-      sku: r[2] ?? "",
-      categoria: r[3] ?? "",
-      unidade: r[4] ?? "",
-      estoqueMinimo: parseFloat(r[5] ?? "0") || 0,
-      estoqueAtual: parseFloat(r[6] ?? "0") || 0,
-      localizacao: r[7] ?? "",
-      ativo: r[8] !== "FALSE",
-      criadoEm: r[9] ?? "",
-      atualizadoEm: r[10] ?? "",
-      _rowNumber: i + 2,
+      id:            str(r[0]),
+      nome:          str(r[1]),
+      sku:           str(r[2]),
+      categoria:     str(r[3]),
+      unidade:       str(r[4]),
+      estoqueMinimo: num(r[5]),
+      estoqueAtual:  num(r[6]),
+      localizacao:   str(r[7]),
+      ativo:         bool(r[8]),
+      criadoEm:      str(r[9]),
+      atualizadoEm:  str(r[10]),
+      _rowNumber:    i + 2,
     }));
 }
 
@@ -127,17 +154,17 @@ export async function loadMovimentacoes(spreadsheetId: string): Promise<Moviment
   return rows
     .filter((r) => r[0])
     .map((r) => ({
-      id: r[0] ?? "",
-      dataHora: r[1] ?? "",
-      produtoId: r[2] ?? "",
-      produtoNome: r[3] ?? "",
-      tipo: (r[4] ?? "entrada") as Movimentacao["tipo"],
-      quantidade: parseFloat(r[5] ?? "0"),
-      saldoAnterior: parseFloat(r[6] ?? "0"),
-      saldoPosterior: parseFloat(r[7] ?? "0"),
-      responsavel: r[8] ?? "",
-      motivo: r[9] ?? "",
-      documento: r[10] ?? "",
+      id:             str(r[0]),
+      dataHora:       str(r[1]),
+      produtoId:      str(r[2]),
+      produtoNome:    str(r[3]),
+      tipo:           str(r[4]) as Movimentacao["tipo"],
+      quantidade:     num(r[5]),
+      saldoAnterior:  num(r[6]),
+      saldoPosterior: num(r[7]),
+      responsavel:    str(r[8]),
+      motivo:         str(r[9]),
+      documento:      str(r[10]),
     }))
     .reverse();
 }
@@ -174,14 +201,14 @@ export async function addMovimentacao(spreadsheetId: string, mov: Movimentacao):
 
 export async function seedProdutos(
   spreadsheetId: string,
-  items: Omit<Produto, "id" | "estoqueAtual" | "criadoEm" | "atualizadoEm" | "_rowNumber">[]
+  items: Omit<Produto, "id" | "criadoEm" | "atualizadoEm" | "_rowNumber">[]
 ): Promise<number> {
   const now = new Date().toISOString();
   const rows = items.map((item) =>
     produtoToRow({
       ...item,
       id: crypto.randomUUID(),
-      estoqueAtual: 0,
+      estoqueAtual: item.estoqueAtual ?? 0,
       criadoEm: now,
       atualizadoEm: now,
       _rowNumber: 0,
@@ -193,6 +220,105 @@ export async function seedProdutos(
     { values: rows }
   );
   return rows.length;
+}
+
+/**
+ * Apaga todos os dados de uma aba a partir da linha `fromRow` (mantém cabeçalho).
+ * Usa a API values.clear — preserva formatação de célula.
+ */
+export async function clearSheetData(
+  spreadsheetId: string,
+  sheetName: string,
+  fromRow = 2,
+): Promise<void> {
+  const range = `${sheetName}!A${fromRow}:Z`;
+  await req("POST", `/${spreadsheetId}/values/${encodeURIComponent(range)}:clear`);
+}
+
+// ── Admin — abas Funcionários e Financeiro ────────────────────────────────────
+export async function ensureAdminSheets(spreadsheetId: string): Promise<void> {
+  type InfoRes = { sheets: Array<{ properties: { title: string } }> };
+  const info = await req<InfoRes>("GET", `/${spreadsheetId}?fields=sheets.properties.title`);
+  const existing = info.sheets.map((s) => s.properties.title);
+
+  const toCreate: { title: string; headers: string[] }[] = [];
+  if (!existing.includes(SHEET_FUNCIONARIOS))
+    toCreate.push({ title: SHEET_FUNCIONARIOS, headers: HEADERS_FUNCIONARIOS });
+  if (!existing.includes(SHEET_FINANCEIRO))
+    toCreate.push({ title: SHEET_FINANCEIRO, headers: HEADERS_FINANCEIRO });
+
+  if (toCreate.length === 0) return;
+
+  await req("POST", `/${spreadsheetId}:batchUpdate`, {
+    requests: toCreate.map(({ title }) => ({ addSheet: { properties: { title } } })),
+  });
+  for (const { title, headers } of toCreate) {
+    await req(
+      "PUT",
+      `/${spreadsheetId}/values/${encodeURIComponent(title + "!A1")}?valueInputOption=RAW`,
+      { values: [headers] }
+    );
+  }
+}
+
+export async function loadFuncionarios(spreadsheetId: string): Promise<Funcionario[]> {
+  const rows = await getValues(spreadsheetId, `${SHEET_FUNCIONARIOS}!A:H`);
+  return rows
+    .filter((r) => r[0])
+    .map((r, i) => ({
+      id:         str(r[0]),
+      nome:       str(r[1]),
+      cargo:      str(r[2]),
+      email:      str(r[3]),
+      telefone:   str(r[4]),
+      salario:    num(r[5]),
+      status:     (str(r[6]) || "ativo") as Funcionario["status"],
+      criadoEm:   str(r[7]),
+      _rowNumber: i + 2,
+    }));
+}
+
+export async function addFuncionario(spreadsheetId: string, f: Funcionario): Promise<void> {
+  await req(
+    "POST",
+    `/${spreadsheetId}/values/${encodeURIComponent(SHEET_FUNCIONARIOS + "!A:H")}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+    { values: [[f.id, f.nome, f.cargo, f.email, f.telefone, f.salario, f.status, f.criadoEm]] }
+  );
+}
+
+export async function updateFuncionario(spreadsheetId: string, f: Funcionario): Promise<void> {
+  const range = `${SHEET_FUNCIONARIOS}!A${f._rowNumber}:H${f._rowNumber}`;
+  await req(
+    "PUT",
+    `/${spreadsheetId}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`,
+    { values: [[f.id, f.nome, f.cargo, f.email, f.telefone, f.salario, f.status, f.criadoEm]] }
+  );
+}
+
+export async function loadLancamentos(spreadsheetId: string): Promise<LancamentoFinanceiro[]> {
+  const rows = await getValues(spreadsheetId, `${SHEET_FINANCEIRO}!A:H`);
+  return rows
+    .filter((r) => r[0])
+    .map((r, i) => ({
+      id:          str(r[0]),
+      dataHora:    str(r[1]),
+      tipo:        (str(r[2]) || "entrada") as LancamentoFinanceiro["tipo"],
+      categoria:   str(r[3]),
+      descricao:   str(r[4]),
+      valor:       num(r[5]),
+      responsavel: str(r[6]),
+      documento:   str(r[7]),
+      _rowNumber:  i + 2,
+    }))
+    .reverse();
+}
+
+export async function addLancamento(spreadsheetId: string, l: LancamentoFinanceiro): Promise<void> {
+  await req(
+    "POST",
+    `/${spreadsheetId}/values/${encodeURIComponent(SHEET_FINANCEIRO + "!A:H")}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+    { values: [[l.id, l.dataHora, l.tipo, l.categoria, l.descricao, l.valor, l.responsavel, l.documento]] }
+  );
 }
 
 // ── Serialização ──────────────────────────────────────────────────────────────
@@ -290,10 +416,10 @@ function freezeRows(sheetId: number, count = 1) {
   };
 }
 
-function autoFilter(sheetId: number, endCol: number) {
+function autoFilter(sheetId: number, endCol: number, startRow = 0) {
   return {
     setBasicFilter: {
-      filter: { range: { sheetId, startRowIndex: 0, startColumnIndex: 0, endColumnIndex: endCol } },
+      filter: { range: { sheetId, startRowIndex: startRow, startColumnIndex: 0, endColumnIndex: endCol } },
     },
   };
 }
@@ -395,7 +521,7 @@ export async function setupSpreadsheet(spreadsheetId: string): Promise<void> {
   const prodId  = _sheetIdCache[SHEET_PRODUTOS]      ?? 0;
   const movId   = _sheetIdCache[SHEET_MOVIMENTACOES] ?? 0;
 
-  // ── 2. Criar Resumo (se necessário) + limpar gráficos antigos ────────────
+  // ── 2. Criar Resumo e Por Produto (se necessário) + limpar gráficos antigos ─
   const initReqs: unknown[] = [];
 
   if (_sheetIdCache[SHEET_RESUMO] === undefined) {
@@ -408,12 +534,17 @@ export async function setupSpreadsheet(spreadsheetId: string): Promise<void> {
     }
   }
 
+  if (_sheetIdCache[SHEET_POR_PRODUTO] === undefined) {
+    initReqs.push({ addSheet: { properties: { title: SHEET_POR_PRODUTO, index: 1 } } });
+  }
+
   if (initReqs.length > 0) {
     await req("POST", `/${spreadsheetId}:batchUpdate`, { requests: initReqs });
     await refreshSheetIds(spreadsheetId);
   }
 
-  const resumoId = _sheetIdCache[SHEET_RESUMO] ?? 0;
+  const resumoId     = _sheetIdCache[SHEET_RESUMO]      ?? 0;
+  const porProdId    = _sheetIdCache[SHEET_POR_PRODUTO]  ?? 0;
 
   // ── 3. Escrever fórmulas na aba Resumo ────────────────────────────────────
   // Layout das linhas (0-indexed como referência):
@@ -437,8 +568,9 @@ export async function setupSpreadsheet(spreadsheetId: string): Promise<void> {
   const P  = "'Produtos'";
   const MV = "'Movimentações'";
   // SUMPRODUCT helpers
+  // Ativo é armazenado como booleano TRUE (não string "TRUE") via USER_ENTERED
   const sp  = (...conds: string[]) => `=SUMPRODUCT(${conds.join("*")})`;
-  const ativo = `(${P}!I2:I2000="TRUE")`;
+  const ativo = `(${P}!I2:I2000=TRUE)`;
 
   const resumoValues: (string | number)[][] = [
     ["SISTEMA DE CONTROLE DE ESTOQUE — RESUMO GERAL"],          // 0
@@ -457,8 +589,7 @@ export async function setupSpreadsheet(spreadsheetId: string): Promise<void> {
     ...CATS.map((cat) => [
       cat,
       sp(`(${P}!D2:D2000="${cat}")`, ativo),
-      // SUMPRODUCT para soma condicional: (cond)*(valores)
-      `=SUMPRODUCT((${P}!D2:D2000="${cat}")*(${P}!I2:I2000="TRUE")*(${P}!G2:G2000))`,
+      `=SUMPRODUCT((${P}!D2:D2000="${cat}")*(${P}!I2:I2000=TRUE)*(${P}!G2:G2000))`,
     ] as (string | number)[]),                                    // 13-16
     [""],                                                         // 17
     ["STATUS DO ESTOQUE"],                                        // 18
@@ -472,6 +603,36 @@ export async function setupSpreadsheet(spreadsheetId: string): Promise<void> {
     "PUT",
     `/${spreadsheetId}/values/${encodeURIComponent(SHEET_RESUMO + "!A1")}?valueInputOption=USER_ENTERED`,
     { values: resumoValues }
+  );
+
+  // ── 3b. Escrever aba "Por Produto" ─────────────────────────────────────────
+  // Estrutura (12 colunas: A = Nº na Cat., B-L = dados do produto):
+  //  Row 0: Título (mesclado A:L)
+  //  Row 1: vazio
+  //  Row 2: Cabeçalhos (Nº na Cat. + 11 colunas de Produtos)
+  //  Row 3: A3 = ARRAYFORMULA de ranking por categoria
+  //          B3 = SORT(FILTER(...)) — derrama 11 colunas (B-L) para baixo
+  //
+  // O ranking usa COUNTIFS para contar quantas linhas com a mesma categoria
+  // têm número de linha <= linha atual (funciona porque o dado está ordenado).
+  const rankFormula =
+    `=ARRAYFORMULA(IF(E4:E2000="","",` +
+    `COUNTIFS(E4:E2000,E4:E2000,ROW(E4:E2000),"<="&ROW(E4:E2000))))`;
+
+  const filterFormula =
+    `=SORT(FILTER('Produtos'!A2:K2000,'Produtos'!I2:I2000=TRUE),4,TRUE,2,TRUE)`;
+
+  const porProdValues: (string | number)[][] = [
+    ["ESTOQUE POR PRODUTO — AGRUPADO POR CATEGORIA"],  // row 0
+    [""],                                               // row 1
+    ["Nº na Cat.", ...HEADERS_PRODUTOS],                // row 2 (12 colunas)
+    [rankFormula, filterFormula],                       // row 3: A3 + B3 (spill)
+  ];
+
+  await req(
+    "PUT",
+    `/${spreadsheetId}/values/${encodeURIComponent(SHEET_POR_PRODUTO + "!A1")}?valueInputOption=USER_ENTERED`,
+    { values: porProdValues }
   );
 
   // ── 4. Formatar todas as abas + adicionar gráficos ────────────────────────
@@ -670,6 +831,54 @@ export async function setupSpreadsheet(spreadsheetId: string): Promise<void> {
         },
       },
     },
+
+    // ════════════════════════════════════════════════════════════
+    // ABA: Por Produto (12 colunas: A = Nº na Cat., B-L = dados)
+    // ════════════════════════════════════════════════════════════
+
+    // Remove filtro existente ANTES do merge para evitar conflito.
+    // (clearBasicFilter é no-op se não houver filtro — seguro na 1ª execução)
+    { clearBasicFilter: { sheetId: porProdId } },
+
+    freezeRows(porProdId, 3),
+
+    // Título (row 0) — mesclado A:L (12 colunas)
+    mergeCols(porProdId, 0, 0, 12),
+    repeatCell(porProdId, 0, 1, 0, 12, COLORS.resumoTitle, COLORS.headerText, true, 14),
+    rowHeight(porProdId, 0, 1, 48),
+
+    // Linha 1 vazia
+    repeatCell(porProdId, 1, 2, 0, 12, COLORS.normal),
+    rowHeight(porProdId, 1, 2, 8),
+
+    // Cabeçalho (row 2) — 12 colunas
+    repeatCell(porProdId, 2, 3, 0, 12, COLORS.headerBlue, COLORS.headerText, true, 10),
+    rowHeight(porProdId, 2, 3, 32),
+    // autoFilter começa na row 2 (índice 2) para não conflitar com o merge do título (row 0)
+    autoFilter(porProdId, 12, 2),
+
+    // Dados (rows 3+) — 12 colunas
+    repeatCell(porProdId, 3, 5000, 0, 12, COLORS.normal),
+    // Nº na Cat. (col A) — alinhamento central e bold
+    repeatCell(porProdId, 3, 5000, 0, 1, COLORS.sectionLight, undefined, true),
+    // Colunas de estoque mínimo e atual (cols F e G = índices 6 e 7 no sheet, mas shifted +1 = 6-7)
+    numFmt(porProdId, 3, 5000, 6, 8, "#,##0.##"),
+    borders(porProdId, 2, 5000, 0, 12),
+
+    // Largura col A: Nº na Cat.
+    colWidth(porProdId, 0, 1, 72),
+    // Colunas B-L (índices 1-11): mesmas larguras da aba Produtos
+    colWidth(porProdId, 1, 2, 240),   // B: ID
+    colWidth(porProdId, 2, 3, 240),   // C: Nome
+    colWidth(porProdId, 3, 4, 130),   // D: SKU
+    colWidth(porProdId, 4, 5, 125),   // E: Categoria
+    colWidth(porProdId, 5, 6, 80),    // F: Unidade
+    colWidth(porProdId, 6, 7, 105),   // G: Estoque Mínimo
+    colWidth(porProdId, 7, 8, 100),   // H: Estoque Atual
+    colWidth(porProdId, 8, 9, 210),   // I: Localização
+    colWidth(porProdId, 9, 10, 55),   // J: Ativo
+    colWidth(porProdId, 10, 11, 160), // K: Criado Em
+    colWidth(porProdId, 11, 12, 160), // L: Atualizado Em
   ];
 
   await req("POST", `/${spreadsheetId}:batchUpdate`, { requests: FMT });

@@ -10,7 +10,10 @@ import {
   applyStockColors,
   applyMovimentacoesColors,
   seedProdutos,
+  clearSheetData,
   setupSpreadsheet,
+  SHEET_PRODUTOS,
+  SHEET_MOVIMENTACOES,
 } from "../api/sheets";
 import { SEED_PRODUCTS } from "../data/seedProducts";
 import { sendLowStockAlert, isEmailConfigured } from "../api/email";
@@ -23,6 +26,7 @@ interface State {
   loading: boolean;
   colorizing: boolean;
   seeding: boolean;
+  resetting: boolean;
   settingUp: boolean;
   sendingEmail: boolean;
   error: string | null;
@@ -36,6 +40,7 @@ type Action =
   | { type: "LOADING"; payload: boolean }
   | { type: "COLORIZING"; payload: boolean }
   | { type: "SEEDING"; payload: boolean }
+  | { type: "RESETTING"; payload: boolean }
   | { type: "SETTING_UP"; payload: boolean }
   | { type: "SENDING_EMAIL"; payload: boolean }
   | { type: "ERROR"; payload: string | null }
@@ -52,6 +57,7 @@ function reducer(state: State, action: Action): State {
     case "LOADING":       return { ...state, loading: action.payload };
     case "COLORIZING":    return { ...state, colorizing: action.payload };
     case "SEEDING":       return { ...state, seeding: action.payload };
+    case "RESETTING":     return { ...state, resetting: action.payload };
     case "SETTING_UP":    return { ...state, settingUp: action.payload };
     case "SENDING_EMAIL": return { ...state, sendingEmail: action.payload };
     case "ERROR":         return { ...state, error: action.payload, loading: false };
@@ -83,6 +89,7 @@ export function useInventory() {
     loading: true,
     colorizing: false,
     seeding: false,
+    resetting: false,
     settingUp: false,
     sendingEmail: false,
     error: null,
@@ -256,6 +263,24 @@ export function useInventory() {
     }
   }, [loadData]);
 
+  // ── Reset + reseed (limpa tudo e reimporta o catálogo com estoque fictício) ──
+  const resetAndSeed = useCallback(async () => {
+    try {
+      dispatch({ type: "RESETTING", payload: true });
+      dispatch({ type: "ERROR", payload: null });
+      await Promise.all([
+        clearSheetData(SHEET_ID, SHEET_PRODUTOS),
+        clearSheetData(SHEET_ID, SHEET_MOVIMENTACOES),
+      ]);
+      await seedProdutos(SHEET_ID, SEED_PRODUCTS);
+      await loadData();
+    } catch (e) {
+      dispatch({ type: "ERROR", payload: (e as Error).message });
+    } finally {
+      dispatch({ type: "RESETTING", payload: false });
+    }
+  }, [loadData]);
+
   // ── Logout (clears token cache, reloads) ────────────────────────────────────
   const logout = useCallback(() => {
     revokeToken();
@@ -275,6 +300,7 @@ export function useInventory() {
     colorSpreadsheet,
     sendAlertEmail,
     importSeedProducts,
+    resetAndSeed,
     setupSheet,
     logout,
   };

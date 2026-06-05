@@ -1,5 +1,31 @@
 export type TipoMovimentacao = "entrada" | "saida" | "ajuste";
 
+// ── Admin — Funcionários ───────────────────────────────────────────────────────
+export interface Funcionario {
+  id: string;
+  nome: string;
+  cargo: string;
+  email: string;
+  telefone: string;
+  salario: number;
+  status: "ativo" | "inativo";
+  criadoEm: string;
+  _rowNumber: number;
+}
+
+// ── Admin — Financeiro ─────────────────────────────────────────────────────────
+export interface LancamentoFinanceiro {
+  id: string;
+  dataHora: string;
+  tipo: "entrada" | "saida";
+  categoria: string;
+  descricao: string;
+  valor: number;
+  responsavel: string;
+  documento: string;
+  _rowNumber: number;
+}
+
 export interface Produto {
   id: string;
   nome: string;

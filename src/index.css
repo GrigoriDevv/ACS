@@ -261,6 +261,22 @@ select option { background: var(--surface); }
   color: var(--text);
 }
 
+/* ── Form inputs ─────────────────────────────────────────────────────────────── */
+.input {
+  width: 100%;
+  padding: 9px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 14px;
+  font-family: var(--font);
+  outline: none;
+  transition: border-color .15s;
+}
+.input:focus { border-color: var(--accent); }
+.input::placeholder { color: var(--text-muted); }
+
 /* ── Login ──────────────────────────────────────────────────────────────────── */
 .login-wrapper {
   min-height: 100vh;

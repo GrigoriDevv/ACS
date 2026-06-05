@@ -3,18 +3,18 @@
  * Uses the browser's native SubtleCrypto — zero npm dependencies, zero popups.
  *
  * Required .env variables:
- *   VITE_SA_CLIENT_EMAIL  — e.g. gtrigorti@sodium-diode-480318-q4.iam.gserviceaccount.com
+ *   VITE_SA_CLIENT_EMAIL  — acs-569@acsrefrigeracao.iam.gserviceaccount.com
  *   VITE_SA_PRIVATE_KEY   — PEM private_key from the service account JSON (with \n)
  */
 
-const CLIENT_EMAIL = import.meta.env.VITE_SA_CLIENT_EMAIL as string;
-const PRIVATE_KEY_RAW = import.meta.env.VITE_SA_PRIVATE_KEY as string;
+const CLIENT_EMAIL   = import.meta.env.VITE_SA_CLIENT_EMAIL  as string;
+const PRIVATE_KEY_RAW = import.meta.env.VITE_SA_PRIVATE_KEY  as string;
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
-const SCOPE = "https://www.googleapis.com/auth/spreadsheets";
+const SCOPE     = "https://www.googleapis.com/auth/spreadsheets";
 
 // ── Token cache ───────────────────────────────────────────────────────────────
-let _token: string | null = null;
-let _expiry = 0;
+let _token:     string    | null = null;
+let _expiry:    number           = 0;
 let _cryptoKey: CryptoKey | null = null;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -37,7 +37,7 @@ async function importKey(pem: string): Promise<CryptoKey> {
     .replace(/\s+/g, "");
 
   const binary = atob(clean);
-  const bytes = new Uint8Array(binary.length);
+  const bytes  = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
 
   return crypto.subtle.importKey(
@@ -50,19 +50,19 @@ async function importKey(pem: string): Promise<CryptoKey> {
 }
 
 async function signJWT(email: string, key: CryptoKey): Promise<string> {
-  const now = Math.floor(Date.now() / 1000);
+  const now     = Math.floor(Date.now() / 1000);
   const header  = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
   const payload = b64url(JSON.stringify({
-    iss: email,
-    sub: email,
+    iss:   email,
+    sub:   email,
     scope: SCOPE,
-    aud: TOKEN_URL,
-    iat: now,
-    exp: now + 3600,
+    aud:   TOKEN_URL,
+    iat:   now,
+    exp:   now + 3600,
   }));
 
   const toSign = `${header}.${payload}`;
-  const sig = await crypto.subtle.sign(
+  const sig    = await crypto.subtle.sign(
     "RSASSA-PKCS1-v1_5",
     key,
     new TextEncoder().encode(toSign)
@@ -75,6 +75,11 @@ async function signJWT(email: string, key: CryptoKey): Promise<string> {
 
 export function isConfigured(): boolean {
   return !!(CLIENT_EMAIL && PRIVATE_KEY_RAW);
+}
+
+/** Service Account não tem sessão de usuário — sempre retorna true se configurado */
+export function isAuthenticated(): boolean {
+  return isConfigured();
 }
 
 export async function getToken(): Promise<string> {
@@ -93,11 +98,11 @@ export async function getToken(): Promise<string> {
   const jwt = await signJWT(CLIENT_EMAIL, _cryptoKey);
 
   const res = await fetch(TOKEN_URL, {
-    method: "POST",
+    method:  "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
+    body:    new URLSearchParams({
       grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      assertion: jwt,
+      assertion:  jwt,
     }),
   });
 
@@ -106,14 +111,13 @@ export async function getToken(): Promise<string> {
     throw new Error((err as { error_description?: string }).error_description ?? "Falha ao obter token");
   }
 
-  const data = await res.json() as { access_token: string; expires_in: number };
-  _token  = data.access_token;
-  _expiry = Date.now() + (data.expires_in - 60) * 1000;
+  const data   = await res.json() as { access_token: string; expires_in: number };
+  _token       = data.access_token;
+  _expiry      = Date.now() + (data.expires_in - 60) * 1000;
   return _token;
 }
 
-// kept for backwards compat — no-op with service accounts
-export function revokeToken() {
-  _token = null;
+export function revokeToken(): void {
+  _token  = null;
   _expiry = 0;
 }
