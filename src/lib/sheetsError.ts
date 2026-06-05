@@ -1,5 +1,7 @@
+const nodeEnv = (globalThis as { process?: { env?: Record<string, string> } }).process?.env;
 const SA_EMAIL =
-  (import.meta.env.VITE_SA_CLIENT_EMAIL as string | undefined)?.trim() ??
+  (import.meta.env?.VITE_SA_CLIENT_EMAIL as string | undefined)?.trim() ??
+  nodeEnv?.VITE_SA_CLIENT_EMAIL?.trim() ??
   "acs-569@acsrefrigeracao.iam.gserviceaccount.com";
 
 /** Traduz erros comuns da Google Sheets API para português. */

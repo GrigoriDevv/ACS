@@ -15,6 +15,7 @@ export const SHEET_MOVIMENTACOES  = "Movimentações";
 export const SHEET_RESUMO         = "Resumo";
 export const SHEET_POR_PRODUTO    = "Por Produto";
 export const SHEET_POR_FUNCIONARIO = "Por Funcionário";
+export const SHEET_ENTRADA_SAIDA_FUNC = "Entrada/Saída Func.";
 export const SHEET_FUNCIONARIOS   = "Funcionários";
 export const SHEET_FINANCEIRO     = "Financeiro";
 
@@ -697,6 +698,10 @@ export async function setupSpreadsheet(spreadsheetId: string): Promise<void> {
     initReqs.push({ addSheet: { properties: { title: SHEET_POR_FUNCIONARIO, index: 2 } } });
   }
 
+  if (_sheetIdCache[SHEET_ENTRADA_SAIDA_FUNC] === undefined) {
+    initReqs.push({ addSheet: { properties: { title: SHEET_ENTRADA_SAIDA_FUNC, index: 3 } } });
+  }
+
   if (initReqs.length > 0) {
     await req("POST", `/${spreadsheetId}:batchUpdate`, { requests: initReqs });
     await refreshSheetIds(spreadsheetId);
@@ -705,6 +710,7 @@ export async function setupSpreadsheet(spreadsheetId: string): Promise<void> {
   const resumoId     = _sheetIdCache[SHEET_RESUMO]      ?? 0;
   const porProdId    = _sheetIdCache[SHEET_POR_PRODUTO]  ?? 0;
   const porFuncId    = _sheetIdCache[SHEET_POR_FUNCIONARIO] ?? 0;
+  const esFuncId     = _sheetIdCache[SHEET_ENTRADA_SAIDA_FUNC] ?? 0;
   const funcId       = _sheetIdCache[SHEET_FUNCIONARIOS] ?? 0;
   const finId        = _sheetIdCache[SHEET_FINANCEIRO]   ?? 0;
 
@@ -813,12 +819,18 @@ export async function setupSpreadsheet(spreadsheetId: string): Promise<void> {
   const porFuncSaidas =
     `=ARRAYFORMULA(IF(B4:B2000="","",SUMPRODUCT((${MV}!$I$2:$I$9999=B4:B2000)*(${MV}!$E$2:$E$9999="saida"))))`;
 
+  const porFuncQtdEntrada =
+    `=ARRAYFORMULA(IF(B4:B2000="","",SUMPRODUCT((${MV}!$I$2:$I$9999=B4:B2000)*(${MV}!$E$2:$E$9999="entrada")*(${MV}!$F$2:$F$9999))))`;
+
+  const porFuncQtdSaida =
+    `=ARRAYFORMULA(IF(B4:B2000="","",SUMPRODUCT((${MV}!$I$2:$I$9999=B4:B2000)*(${MV}!$E$2:$E$9999="saida")*(${MV}!$F$2:$F$9999))))`;
+
   const porFuncTotal =
     `=ARRAYFORMULA(IF(B4:B2000="","",SUMPRODUCT((${MV}!$I$2:$I$9999=B4:B2000)*(${MV}!$E$2:$E$9999<>"ajuste"))))`;
 
   const porFuncHeaders = [
     "Nº", "ID", "Nome", "Cargo", "Email", "Telefone", "Salário", "Status",
-    "Entradas", "Saídas", "Total Mov.",
+    "Nº Entradas", "Nº Saídas", "Qtd. Entrada", "Qtd. Saída", "Total Mov.",
   ];
 
   const porFuncValues: (string | number)[][] = [
@@ -837,7 +849,57 @@ export async function setupSpreadsheet(spreadsheetId: string): Promise<void> {
   await req(
     "PUT",
     `/${spreadsheetId}/values/${encodeURIComponent(SHEET_POR_FUNCIONARIO + "!I4")}?valueInputOption=USER_ENTERED`,
-    { values: [[porFuncEntradas, porFuncSaidas, porFuncTotal]] }
+    { values: [[porFuncEntradas, porFuncSaidas, porFuncQtdEntrada, porFuncQtdSaida, porFuncTotal]] }
+  );
+
+  // ── 3d. Aba "Entrada/Saída Func." — histórico detalhado por funcionário ───
+  const esFuncDetail =
+    `=SORT(` +
+    `FILTER(` +
+    `{${MV}!J2:J2000,${MV}!K2:K2000,${MV}!L2:L2000,${MV}!M2:M2000,${MV}!B2:B2000,${MV}!E2:E2000,${MV}!D2:D2000,${MV}!F2:F2000,${MV}!N2:N2000,${MV}!O2:O2000,${MV}!I2:I2000},` +
+    `(${MV}!E2:E2000="entrada")+(${MV}!E2:E2000="saida"),` +
+    `(${MV}!J2:J2000<>"")+(${MV}!I2:I2000<>"")` +
+    `),` +
+    `1,TRUE,5,FALSE)`;
+
+  const esFuncHeaders = [
+    "Funcionário", "Cargo", "E-mail", "Telefone",
+    "Data/Hora", "Tipo", "Produto", "Quantidade", "Motivo", "Documento", "Func. ID",
+  ];
+
+  const esFuncValues: (string | number)[][] = [
+    ["ENTRADAS E SAÍDAS POR FUNCIONÁRIO — DETALHADO"],
+    [""],
+    esFuncHeaders,
+    [esFuncDetail],
+  ];
+
+  await req(
+    "PUT",
+    `/${spreadsheetId}/values/${encodeURIComponent(SHEET_ENTRADA_SAIDA_FUNC + "!A1")}?valueInputOption=USER_ENTERED`,
+    { values: esFuncValues }
+  );
+
+  // ── 3e. Colunas de totais na aba Funcionários (I–L, fórmulas) ─────────────
+  const funcExtraHeaders = ["Nº Entradas", "Nº Saídas", "Qtd. Entrada", "Qtd. Saída"];
+  const funcEntradas =
+    `=ARRAYFORMULA(IF(A2:A2000="","",SUMPRODUCT((${MV}!$I$2:$I$9999=A2:A2000)*(${MV}!$E$2:$E$9999="entrada"))))`;
+  const funcSaidas =
+    `=ARRAYFORMULA(IF(A2:A2000="","",SUMPRODUCT((${MV}!$I$2:$I$9999=A2:A2000)*(${MV}!$E$2:$E$9999="saida"))))`;
+  const funcQtdEntrada =
+    `=ARRAYFORMULA(IF(A2:A2000="","",SUMPRODUCT((${MV}!$I$2:$I$9999=A2:A2000)*(${MV}!$E$2:$E$9999="entrada")*(${MV}!$F$2:$F$9999))))`;
+  const funcQtdSaida =
+    `=ARRAYFORMULA(IF(A2:A2000="","",SUMPRODUCT((${MV}!$I$2:$I$9999=A2:A2000)*(${MV}!$E$2:$E$9999="saida")*(${MV}!$F$2:$F$9999))))`;
+
+  await req(
+    "PUT",
+    `/${spreadsheetId}/values/${encodeURIComponent(SHEET_FUNCIONARIOS + "!I1")}?valueInputOption=USER_ENTERED`,
+    { values: [funcExtraHeaders] }
+  );
+  await req(
+    "PUT",
+    `/${spreadsheetId}/values/${encodeURIComponent(SHEET_FUNCIONARIOS + "!I2")}?valueInputOption=USER_ENTERED`,
+    { values: [[funcEntradas, funcSaidas, funcQtdEntrada, funcQtdSaida]] }
   );
 
   // ── 4. Formatar todas as abas + adicionar gráficos ────────────────────────
@@ -1090,24 +1152,24 @@ export async function setupSpreadsheet(spreadsheetId: string): Promise<void> {
     colWidth(porProdId, 11, 12, 160), // L: Atualizado Em
 
     // ════════════════════════════════════════════════════════════
-    // ABA: Por Funcionário (11 colunas)
+    // ABA: Por Funcionário (13 colunas)
     // ════════════════════════════════════════════════════════════
     { clearBasicFilter: { sheetId: porFuncId } },
 
     freezeRows(porFuncId, 3),
-    mergeCols(porFuncId, 0, 0, 11),
-    repeatCell(porFuncId, 0, 1, 0, 11, COLORS.resumoTitle, COLORS.headerText, true, 14),
+    mergeCols(porFuncId, 0, 0, 13),
+    repeatCell(porFuncId, 0, 1, 0, 13, COLORS.resumoTitle, COLORS.headerText, true, 14),
     rowHeight(porFuncId, 0, 1, 48),
-    repeatCell(porFuncId, 1, 2, 0, 11, COLORS.normal),
+    repeatCell(porFuncId, 1, 2, 0, 13, COLORS.normal),
     rowHeight(porFuncId, 1, 2, 8),
-    repeatCell(porFuncId, 2, 3, 0, 11, COLORS.headerTeal, COLORS.headerText, true, 10),
+    repeatCell(porFuncId, 2, 3, 0, 13, COLORS.headerTeal, COLORS.headerText, true, 10),
     rowHeight(porFuncId, 2, 3, 32),
-    autoFilter(porFuncId, 11, 2),
-    repeatCell(porFuncId, 3, 5000, 0, 11, COLORS.normal),
+    autoFilter(porFuncId, 13, 2),
+    repeatCell(porFuncId, 3, 5000, 0, 13, COLORS.normal),
     repeatCell(porFuncId, 3, 5000, 0, 1, COLORS.sectionLight, undefined, true),
     numFmt(porFuncId, 3, 5000, 6, 7, "#,##0.00"),
-    numFmt(porFuncId, 3, 5000, 8, 11, "#,##0"),
-    borders(porFuncId, 2, 5000, 0, 11),
+    numFmt(porFuncId, 3, 5000, 8, 13, "#,##0.##"),
+    borders(porFuncId, 2, 5000, 0, 13),
     colWidth(porFuncId, 0, 1, 72),
     colWidth(porFuncId, 1, 2, 240),
     colWidth(porFuncId, 2, 3, 180),
@@ -1119,15 +1181,48 @@ export async function setupSpreadsheet(spreadsheetId: string): Promise<void> {
     colWidth(porFuncId, 8, 9, 90),
     colWidth(porFuncId, 9, 10, 90),
     colWidth(porFuncId, 10, 11, 100),
+    colWidth(porFuncId, 11, 12, 100),
+    colWidth(porFuncId, 12, 13, 90),
 
     // ════════════════════════════════════════════════════════════
-    // ABA: Funcionários
+    // ABA: Entrada/Saída Func. (11 colunas — histórico detalhado)
+    // ════════════════════════════════════════════════════════════
+    { clearBasicFilter: { sheetId: esFuncId } },
+
+    freezeRows(esFuncId, 3),
+    mergeCols(esFuncId, 0, 0, 11),
+    repeatCell(esFuncId, 0, 1, 0, 11, COLORS.resumoTitle, COLORS.headerText, true, 14),
+    rowHeight(esFuncId, 0, 1, 48),
+    repeatCell(esFuncId, 1, 2, 0, 11, COLORS.normal),
+    rowHeight(esFuncId, 1, 2, 8),
+    repeatCell(esFuncId, 2, 3, 0, 11, COLORS.headerTeal, COLORS.headerText, true, 10),
+    rowHeight(esFuncId, 2, 3, 32),
+    autoFilter(esFuncId, 11, 2),
+    repeatCell(esFuncId, 3, 5000, 0, 11, COLORS.normal),
+    numFmt(esFuncId, 3, 5000, 7, 8, "#,##0.##"),
+    borders(esFuncId, 2, 5000, 0, 11),
+    colWidth(esFuncId, 0, 1, 160),
+    colWidth(esFuncId, 1, 2, 120),
+    colWidth(esFuncId, 2, 3, 180),
+    colWidth(esFuncId, 3, 4, 120),
+    colWidth(esFuncId, 4, 5, 160),
+    colWidth(esFuncId, 5, 6, 80),
+    colWidth(esFuncId, 6, 7, 200),
+    colWidth(esFuncId, 7, 8, 90),
+    colWidth(esFuncId, 8, 9, 200),
+    colWidth(esFuncId, 9, 10, 120),
+    colWidth(esFuncId, 10, 11, 240),
+
+    // ════════════════════════════════════════════════════════════
+    // ABA: Funcionários (A–H dados + I–L totais de movimentação)
     // ════════════════════════════════════════════════════════════
     freezeRows(funcId),
-    autoFilter(funcId, 8),
-    repeatCell(funcId, 0, 1, 0, 8, COLORS.headerBlue, COLORS.headerText, true, 10),
+    autoFilter(funcId, 12),
+    repeatCell(funcId, 0, 1, 0, 12, COLORS.headerBlue, COLORS.headerText, true, 10),
     rowHeight(funcId, 0, 1, 32),
     repeatCell(funcId, 1, 5000, 0, 8, COLORS.normal),
+    repeatCell(funcId, 0, 1, 8, 12, COLORS.catLight, COLORS.headerText, true, 10),
+    repeatCell(funcId, 1, 5000, 8, 12, COLORS.sectionLight, undefined, true),
     colWidth(funcId, 0, 1, 240),
     colWidth(funcId, 1, 2, 180),
     colWidth(funcId, 2, 3, 130),
@@ -1136,8 +1231,13 @@ export async function setupSpreadsheet(spreadsheetId: string): Promise<void> {
     colWidth(funcId, 5, 6, 100),
     colWidth(funcId, 6, 7, 80),
     colWidth(funcId, 7, 8, 160),
+    colWidth(funcId, 8, 9, 90),
+    colWidth(funcId, 9, 10, 90),
+    colWidth(funcId, 10, 11, 100),
+    colWidth(funcId, 11, 12, 100),
     numFmt(funcId, 1, 5000, 5, 6, "#,##0.00"),
-    borders(funcId, 0, 5000, 0, 8),
+    numFmt(funcId, 1, 5000, 10, 12, "#,##0.##"),
+    borders(funcId, 0, 5000, 0, 12),
 
     // ════════════════════════════════════════════════════════════
     // ABA: Financeiro
