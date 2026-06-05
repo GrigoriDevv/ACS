@@ -17,6 +17,7 @@ import {
 } from "../api/sheets";
 import { SEED_PRODUCTS } from "../data/seedProducts";
 import { sendLowStockAlert, isEmailConfigured } from "../api/email";
+import { normalizeSpreadsheetId } from "../lib/spreadsheetId";
 import type { Movimentacao, Produto, TipoMovimentacao } from "../types";
 import { alertaFromProduto, produtoAbaixoMinimo } from "../types";
 
@@ -81,7 +82,7 @@ function reducer(state: State, action: Action): State {
 }
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
-const SHEET_ID = import.meta.env.VITE_SPREADSHEET_ID as string;
+const SHEET_ID = normalizeSpreadsheetId(import.meta.env.VITE_SPREADSHEET_ID as string);
 
 export function useInventory() {
   const [state, dispatch] = useReducer(reducer, {
@@ -165,14 +166,19 @@ export function useInventory() {
         estoqueAtual: 0,
         criadoEm: now,
         atualizadoEm: now,
-        _rowNumber: state.produtos.length + 2,
+        _rowNumber: 0,
       };
-      dispatch({ type: "ADD_PRODUTO", payload: produto });
-      await addProduto(SHEET_ID, produto);
-      const prods = await loadProdutos(SHEET_ID);
-      dispatch({ type: "SET_PRODUTOS", payload: prods });
+      try {
+        dispatch({ type: "ERROR", payload: null });
+        await addProduto(SHEET_ID, produto);
+        const prods = await loadProdutos(SHEET_ID);
+        dispatch({ type: "SET_PRODUTOS", payload: prods });
+      } catch (e) {
+        dispatch({ type: "ERROR", payload: (e as Error).message });
+        throw e;
+      }
     },
-    [state.produtos.length]
+    []
   );
 
   // ── Register movement ───────────────────────────────────────────────────────
@@ -219,10 +225,15 @@ export function useInventory() {
 
       const updated: Produto = { ...produto, estoqueAtual: saldoPosterior, atualizadoEm: now };
 
-      dispatch({ type: "UPDATE_PRODUTO", payload: updated });
-      dispatch({ type: "ADD_MOVIMENTACAO", payload: mov });
-
-      await Promise.all([updateProduto(SHEET_ID, updated), addMovimentacao(SHEET_ID, mov)]);
+      try {
+        dispatch({ type: "ERROR", payload: null });
+        await Promise.all([updateProduto(SHEET_ID, updated), addMovimentacao(SHEET_ID, mov)]);
+        dispatch({ type: "UPDATE_PRODUTO", payload: updated });
+        dispatch({ type: "ADD_MOVIMENTACAO", payload: mov });
+      } catch (e) {
+        dispatch({ type: "ERROR", payload: (e as Error).message });
+        throw e;
+      }
 
       const wasOk    = saldoAnterior >= produto.estoqueMinimo;
       const nowBelow = saldoPosterior < produto.estoqueMinimo;
@@ -231,6 +242,51 @@ export function useInventory() {
         if (isEmailConfigured()) {
           sendLowStockAlert([alertaFromProduto(updated)]).catch(() => null);
         }
+      }
+    },
+    [state.produtos]
+  );
+
+  // ── Update stock (ajuste manual) ────────────────────────────────────────────
+  const updateStock = useCallback(
+    async (produtoId: string, novoEstoque: number) => {
+      if (isNaN(novoEstoque) || novoEstoque < 0) {
+        throw new Error("Estoque inválido. Informe um número maior ou igual a zero.");
+      }
+
+      const produto = state.produtos.find((p) => p.id === produtoId);
+      if (!produto) throw new Error("Produto não encontrado.");
+      if (!produto.ativo) throw new Error("Produto inativo.");
+      if (produto.estoqueAtual === novoEstoque) return;
+
+      const saldoAnterior = produto.estoqueAtual;
+      const now = new Date().toISOString();
+
+      const mov: Movimentacao = {
+        id: crypto.randomUUID(),
+        dataHora: now,
+        produtoId: produto.id,
+        produtoNome: produto.nome,
+        tipo: "ajuste",
+        quantidade: novoEstoque,
+        saldoAnterior,
+        saldoPosterior: novoEstoque,
+        responsavel: "Ajuste manual",
+        motivo: "Correção de estoque via tela de produtos",
+        documento: "",
+      };
+
+      const updated: Produto = { ...produto, estoqueAtual: novoEstoque, atualizadoEm: now };
+
+      try {
+        dispatch({ type: "ERROR", payload: null });
+        await Promise.all([updateProduto(SHEET_ID, updated), addMovimentacao(SHEET_ID, mov)]);
+        dispatch({ type: "UPDATE_PRODUTO", payload: updated });
+        dispatch({ type: "ADD_MOVIMENTACAO", payload: mov });
+        applyStockColors(SHEET_ID, [updated]).catch(() => null);
+      } catch (e) {
+        dispatch({ type: "ERROR", payload: (e as Error).message });
+        throw e;
       }
     },
     [state.produtos]
@@ -297,6 +353,7 @@ export function useInventory() {
     loadData,
     registerProduct,
     registerMovement,
+    updateStock,
     colorSpreadsheet,
     sendAlertEmail,
     importSeedProducts,

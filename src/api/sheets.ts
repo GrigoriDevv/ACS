@@ -77,6 +77,28 @@ async function getSheetId(spreadsheetId: string, title: string): Promise<number>
 }
 
 // ── Criação das abas ──────────────────────────────────────────────────────────
+
+/** Garante que a linha 1 de uma aba contém os cabeçalhos esperados. */
+async function ensureHeaders(
+  spreadsheetId: string,
+  sheetName: string,
+  headers: string[],
+): Promise<void> {
+  const data = await req<ValuesResponse>(
+    "GET",
+    `/${spreadsheetId}/values/${encodeURIComponent(sheetName + "!A1:Z1")}?valueRenderOption=UNFORMATTED_VALUE`
+  );
+  const row = data.values?.[0] ?? [];
+  const ok  = headers.every((h, i) => str(row[i]) === h);
+  if (!ok) {
+    await req(
+      "PUT",
+      `/${spreadsheetId}/values/${encodeURIComponent(sheetName + "!A1")}?valueInputOption=RAW`,
+      { values: [headers] }
+    );
+  }
+}
+
 export async function ensureSheets(spreadsheetId: string): Promise<void> {
   type InfoRes = { sheets: Array<{ properties: { title: string } }> };
   const info = await req<InfoRes>("GET", `/${spreadsheetId}?fields=sheets.properties.title`);
@@ -88,19 +110,57 @@ export async function ensureSheets(spreadsheetId: string): Promise<void> {
   if (!existing.includes(SHEET_MOVIMENTACOES))
     toCreate.push({ title: SHEET_MOVIMENTACOES, headers: HEADERS_MOVIMENTACOES });
 
-  if (toCreate.length === 0) return;
-
-  await req("POST", `/${spreadsheetId}:batchUpdate`, {
-    requests: toCreate.map(({ title }) => ({ addSheet: { properties: { title } } })),
-  });
-
-  for (const { title, headers } of toCreate) {
-    await req(
-      "PUT",
-      `/${spreadsheetId}/values/${encodeURIComponent(title + "!A1")}?valueInputOption=RAW`,
-      { values: [headers] }
-    );
+  if (toCreate.length > 0) {
+    await req("POST", `/${spreadsheetId}:batchUpdate`, {
+      requests: toCreate.map(({ title }) => ({ addSheet: { properties: { title } } })),
+    });
+    for (const { title, headers } of toCreate) {
+      await req(
+        "PUT",
+        `/${spreadsheetId}/values/${encodeURIComponent(title + "!A1")}?valueInputOption=RAW`,
+        { values: [headers] }
+      );
+    }
   }
+
+  // Abas podem existir sem cabeçalho (ex.: criadas manualmente) — sempre validar linha 1
+  await ensureHeaders(spreadsheetId, SHEET_PRODUTOS, HEADERS_PRODUTOS);
+  await ensureHeaders(spreadsheetId, SHEET_MOVIMENTACOES, HEADERS_MOVIMENTACOES);
+
+  // Página1 padrão do Google Sheets fica vazia — escrever painel se estiver em branco
+  await ensureHomePanel(spreadsheetId, existing);
+}
+
+/** Preenche "Página1" com resumo dinâmico se a aba existir e estiver vazia. */
+async function ensureHomePanel(spreadsheetId: string, existingTabs: string[]): Promise<void> {
+  const HOME = "Página1";
+  if (!existingTabs.includes(HOME)) return;
+
+  const data = await req<ValuesResponse>(
+    "GET",
+    `/${spreadsheetId}/values/${encodeURIComponent(HOME + "!A1")}?valueRenderOption=UNFORMATTED_VALUE`
+  );
+  if (data.values?.[0]?.[0]) return; // já tem conteúdo
+
+  const P = SHEET_PRODUTOS;
+  const ativo = `(${P}!I2:I2000=TRUE)`;
+  await req(
+    "PUT",
+    `/${spreadsheetId}/values/${encodeURIComponent(HOME + "!A1")}?valueInputOption=USER_ENTERED`,
+    {
+      values: [
+        ["ACS GESTÃO — PAINEL DE ESTOQUE"],
+        [""],
+        ["Indicador", "Valor"],
+        ["Total de Produtos", `=COUNTA(${P}!B2:B9999)`],
+        ["Produtos Ativos", `=SUMPRODUCT(${ativo})`],
+        ["Abaixo do Mínimo", `=SUMPRODUCT((${P}!G2:G2000<${P}!F2:F2000)*${ativo})`],
+        ["Estoque Zerado", `=SUMPRODUCT((${P}!G2:G2000=0)*${ativo})`],
+        [""],
+        ['→ Clique na aba "Produtos" abaixo para ver todos os itens'],
+      ],
+    }
+  );
 }
 
 // ── Leitura ───────────────────────────────────────────────────────────────────
@@ -252,18 +312,21 @@ export async function ensureAdminSheets(spreadsheetId: string): Promise<void> {
   if (!existing.includes(SHEET_FINANCEIRO))
     toCreate.push({ title: SHEET_FINANCEIRO, headers: HEADERS_FINANCEIRO });
 
-  if (toCreate.length === 0) return;
-
-  await req("POST", `/${spreadsheetId}:batchUpdate`, {
-    requests: toCreate.map(({ title }) => ({ addSheet: { properties: { title } } })),
-  });
-  for (const { title, headers } of toCreate) {
-    await req(
-      "PUT",
-      `/${spreadsheetId}/values/${encodeURIComponent(title + "!A1")}?valueInputOption=RAW`,
-      { values: [headers] }
-    );
+  if (toCreate.length > 0) {
+    await req("POST", `/${spreadsheetId}:batchUpdate`, {
+      requests: toCreate.map(({ title }) => ({ addSheet: { properties: { title } } })),
+    });
+    for (const { title, headers } of toCreate) {
+      await req(
+        "PUT",
+        `/${spreadsheetId}/values/${encodeURIComponent(title + "!A1")}?valueInputOption=RAW`,
+        { values: [headers] }
+      );
+    }
   }
+
+  await ensureHeaders(spreadsheetId, SHEET_FUNCIONARIOS, HEADERS_FUNCIONARIOS);
+  await ensureHeaders(spreadsheetId, SHEET_FINANCEIRO, HEADERS_FINANCEIRO);
 }
 
 export async function loadFuncionarios(spreadsheetId: string): Promise<Funcionario[]> {
@@ -333,7 +396,7 @@ function produtoToRow(p: Produto): (string | number | boolean)[] {
   return [
     p.id, p.nome, p.sku, p.categoria, p.unidade,
     p.estoqueMinimo, p.estoqueAtual, p.localizacao,
-    p.ativo ? "TRUE" : "FALSE", p.criadoEm, p.atualizadoEm,
+    p.ativo, p.criadoEm, p.atualizadoEm,
   ];
 }
 

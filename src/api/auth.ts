@@ -7,8 +7,9 @@
  *   VITE_SA_PRIVATE_KEY   — PEM private_key from the service account JSON (with \n)
  */
 
-const CLIENT_EMAIL   = import.meta.env.VITE_SA_CLIENT_EMAIL  as string;
-const PRIVATE_KEY_RAW = import.meta.env.VITE_SA_PRIVATE_KEY  as string;
+const nodeEnv = (globalThis as { process?: { env?: Record<string, string> } }).process?.env;
+const CLIENT_EMAIL    = (import.meta.env?.VITE_SA_CLIENT_EMAIL    ?? nodeEnv?.VITE_SA_CLIENT_EMAIL)    as string;
+const PRIVATE_KEY_RAW = (import.meta.env?.VITE_SA_PRIVATE_KEY     ?? nodeEnv?.VITE_SA_PRIVATE_KEY)     as string;
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const SCOPE     = "https://www.googleapis.com/auth/spreadsheets";
 

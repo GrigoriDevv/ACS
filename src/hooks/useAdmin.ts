@@ -8,8 +8,9 @@ import {
   addLancamento,
 } from "../api/sheets";
 import type { Funcionario, LancamentoFinanceiro } from "../types";
+import { normalizeSpreadsheetId } from "../lib/spreadsheetId";
 
-const SHEET_ID     = import.meta.env.VITE_SPREADSHEET_ID as string;
+const SHEET_ID     = normalizeSpreadsheetId(import.meta.env.VITE_SPREADSHEET_ID as string);
 const ADMIN_USER   = import.meta.env.VITE_ADMIN_USER     as string ?? "admin";
 const ADMIN_PASS   = import.meta.env.VITE_ADMIN_PASSWORD  as string ?? "";
 const SESSION_KEY  = "acs_admin_auth";
