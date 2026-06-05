@@ -9,12 +9,14 @@ export default function Dashboard({
   loading,
   colorizing,
   seeding,
+  settingUp,
   sendingEmail,
   emailStatus,
   emailConfigured,
   colorSpreadsheet,
   sendAlertEmail,
   importSeedProducts,
+  setupSheet,
 }: InventoryHook) {
   const total   = produtos.filter((p) => p.ativo).length;
   const zerados = produtos.filter((p) => p.ativo && p.estoqueAtual === 0).length;
@@ -41,7 +43,23 @@ export default function Dashboard({
           {colorizing ? "Colorindo..." : "Colorir planilha"}
         </button>
         <button
-          className={`btn ${emailConfigured ? "btn-primary" : "btn-secondary"}`}
+          className="btn btn-primary"
+          onClick={setupSheet}
+          disabled={settingUp || loading}
+          title="Cria aba Resumo com fórmulas, aplica formatação profissional e adiciona 3 gráficos na planilha"
+        >
+          {settingUp ? "Configurando planilha..." : "Configurar planilha"}
+        </button>
+        <button
+          className="btn btn-secondary"
+          onClick={colorSpreadsheet}
+          disabled={colorizing || loading}
+          title="Atualiza as cores de alerta de estoque nas abas Produtos e Movimentações"
+        >
+          {colorizing ? "Colorindo..." : "Colorir alertas"}
+        </button>
+        <button
+          className={`btn ${emailConfigured ? "btn-secondary" : "btn-secondary"}`}
           onClick={sendAlertEmail}
           disabled={sendingEmail || alerts.length === 0}
           title={
@@ -55,6 +73,17 @@ export default function Dashboard({
           {sendingEmail ? "Enviando..." : `Alerta e-mail${alerts.length > 0 ? ` (${alerts.length})` : ""}`}
         </button>
       </div>
+
+      {/* ── Banner de configuração da planilha ── */}
+      {settingUp && (
+        <div style={{
+          background: "var(--surface)", border: "1px solid var(--border)",
+          borderRadius: 8, padding: "12px 16px", marginBottom: 16,
+          fontSize: 13, color: "var(--text-muted)",
+        }}>
+          Criando aba Resumo, aplicando formatação e inserindo gráficos... aguarde alguns segundos.
+        </div>
+      )}
 
       {/* ── Status do e-mail ── */}
       {emailStatus && (
