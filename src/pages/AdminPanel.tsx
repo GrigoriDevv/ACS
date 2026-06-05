@@ -104,6 +104,7 @@ export default function AdminPanel(admin: AdminHook) {
           totalSaidas={admin.totalSaidas}
           saldo={admin.saldo}
           registrarLancamento={admin.registrarLancamento}
+          funcionarios={admin.funcionarios}
         />
       )}
     </div>

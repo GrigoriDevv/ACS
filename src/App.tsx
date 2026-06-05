@@ -111,10 +111,10 @@ export default function App() {
         {page === "dashboard"   && <Dashboard  {...inventory} />}
         {page === "products"    && <Products   {...inventory} />}
         {page === "inbound"     && (
-          <MovementForm tipo="entrada" produtos={inventory.produtos} registerMovement={inventory.registerMovement} />
+          <MovementForm tipo="entrada" produtos={inventory.produtos} funcionarios={inventory.funcionarios} registerMovement={inventory.registerMovement} />
         )}
         {page === "outbound"    && (
-          <MovementForm tipo="saida" produtos={inventory.produtos} registerMovement={inventory.registerMovement} />
+          <MovementForm tipo="saida" produtos={inventory.produtos} funcionarios={inventory.funcionarios} registerMovement={inventory.registerMovement} />
         )}
         {page === "history"     && <History    {...inventory} />}
         {page === "new-product" && <NewProduct {...inventory} />}

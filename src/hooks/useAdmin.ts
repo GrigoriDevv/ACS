@@ -1,4 +1,4 @@
-import { useCallback, useReducer } from "react";
+import { useCallback, useEffect, useReducer } from "react";
 import {
   ensureAdminSheets,
   loadFuncionarios,
@@ -8,12 +8,18 @@ import {
   addLancamento,
 } from "../api/sheets";
 import type { Funcionario, LancamentoFinanceiro } from "../types";
+import { snapshotFuncionario, snapshotResponsavel } from "../lib/funcionario";
 import { normalizeSpreadsheetId } from "../lib/spreadsheetId";
+import {
+  isAdminAuthenticated,
+  loadAdmin,
+  saveAdmin,
+  setAdminAuthenticated,
+} from "../lib/localStore";
 
 const SHEET_ID     = normalizeSpreadsheetId(import.meta.env.VITE_SPREADSHEET_ID as string);
 const ADMIN_USER   = import.meta.env.VITE_ADMIN_USER     as string ?? "admin";
 const ADMIN_PASS   = import.meta.env.VITE_ADMIN_PASSWORD  as string ?? "";
-const SESSION_KEY  = "acs_admin_auth";
 
 // ── State ─────────────────────────────────────────────────────────────────────
 interface State {
@@ -60,22 +66,29 @@ function reducer(state: State, action: Action): State {
 }
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
+const cachedAdmin = loadAdmin();
+
 export function useAdmin() {
   const [state, dispatch] = useReducer(reducer, {
-    authenticated: sessionStorage.getItem(SESSION_KEY) === "1",
+    authenticated: isAdminAuthenticated(),
     loading: false,
     saving: false,
     error: null,
-    funcionarios: [],
-    lancamentos: [],
+    funcionarios: cachedAdmin.funcionarios,
+    lancamentos: cachedAdmin.lancamentos,
   });
+
+  useEffect(() => {
+    saveAdmin(state.funcionarios, state.lancamentos);
+  }, [state.funcionarios, state.lancamentos]);
 
   // ── Auth ────────────────────────────────────────────────────────────────────
   const login = useCallback((user: string, password: string): boolean => {
     const ok = user === ADMIN_USER && password === ADMIN_PASS;
     if (ok) {
-      sessionStorage.setItem(SESSION_KEY, "1");
+      setAdminAuthenticated(true);
       dispatch({ type: "AUTH", payload: true });
+      dispatch({ type: "ERROR", payload: null });
     } else {
       dispatch({ type: "ERROR", payload: "Usuário ou senha incorretos." });
     }
@@ -83,7 +96,7 @@ export function useAdmin() {
   }, []);
 
   const logout = useCallback(() => {
-    sessionStorage.removeItem(SESSION_KEY);
+    setAdminAuthenticated(false);
     dispatch({ type: "AUTH", payload: false });
   }, []);
 
@@ -100,7 +113,18 @@ export function useAdmin() {
       dispatch({ type: "SET_FUNCIONARIOS", payload: funcs });
       dispatch({ type: "SET_LANCAMENTOS", payload: lancs });
     } catch (e) {
-      dispatch({ type: "ERROR", payload: (e as Error).message });
+      const msg = (e as Error).message;
+      const local = loadAdmin();
+      if (local.funcionarios.length > 0 || local.lancamentos.length > 0) {
+        dispatch({ type: "SET_FUNCIONARIOS", payload: local.funcionarios });
+        dispatch({ type: "SET_LANCAMENTOS", payload: local.lancamentos });
+        dispatch({
+          type: "ERROR",
+          payload: `Planilha indisponível (${msg}). Exibindo dados salvos localmente.`,
+        });
+      } else {
+        dispatch({ type: "ERROR", payload: msg });
+      }
     } finally {
       dispatch({ type: "LOADING", payload: false });
     }
@@ -115,6 +139,7 @@ export function useAdmin() {
         criadoEm: new Date().toISOString(),
         _rowNumber: 0,
       };
+      dispatch({ type: "ADD_FUNCIONARIO", payload: f });
       try {
         dispatch({ type: "SAVING", payload: true });
         dispatch({ type: "ERROR", payload: null });
@@ -123,7 +148,10 @@ export function useAdmin() {
         dispatch({ type: "SET_FUNCIONARIOS", payload: updated });
         return true;
       } catch (e) {
-        dispatch({ type: "ERROR", payload: (e as Error).message });
+        dispatch({
+          type: "ERROR",
+          payload: `Salvo localmente, mas falha ao sincronizar planilha: ${(e as Error).message}`,
+        });
         return false;
       } finally {
         dispatch({ type: "SAVING", payload: false });
@@ -138,12 +166,15 @@ export function useAdmin() {
         ...f,
         status: f.status === "ativo" ? "inativo" : "ativo",
       };
+      dispatch({ type: "UPDATE_FUNCIONARIO", payload: updated });
       try {
         dispatch({ type: "SAVING", payload: true });
         await updateFuncionario(SHEET_ID, updated);
-        dispatch({ type: "UPDATE_FUNCIONARIO", payload: updated });
       } catch (e) {
-        dispatch({ type: "ERROR", payload: (e as Error).message });
+        dispatch({
+          type: "ERROR",
+          payload: `Salvo localmente, mas falha ao sincronizar planilha: ${(e as Error).message}`,
+        });
       } finally {
         dispatch({ type: "SAVING", payload: false });
       }
@@ -153,21 +184,42 @@ export function useAdmin() {
 
   // ── Financeiro ──────────────────────────────────────────────────────────────
   const registrarLancamento = useCallback(
-    async (data: Omit<LancamentoFinanceiro, "id" | "dataHora" | "_rowNumber">): Promise<boolean> => {
+    async (
+      data: Omit<LancamentoFinanceiro, "id" | "dataHora" | "_rowNumber" | keyof ReturnType<typeof snapshotFuncionario>> & {
+        funcionarioId?: string;
+        responsavel?: string;
+      }
+    ): Promise<boolean> => {
+      const func = data.funcionarioId
+        ? cachedAdmin.funcionarios.find((f) => f.id === data.funcionarioId)
+        ?? loadAdmin().funcionarios.find((f) => f.id === data.funcionarioId)
+        : undefined;
+      const funcSnap = func
+        ? snapshotFuncionario(func)
+        : snapshotResponsavel(data.responsavel ?? "");
+
       const l: LancamentoFinanceiro = {
-        ...data,
+        tipo:        data.tipo,
+        categoria:   data.categoria,
+        descricao:   data.descricao,
+        valor:       data.valor,
+        documento:   data.documento,
+        ...funcSnap,
         id: crypto.randomUUID(),
         dataHora: new Date().toISOString(),
         _rowNumber: 0,
       };
+      dispatch({ type: "ADD_LANCAMENTO", payload: l });
       try {
         dispatch({ type: "SAVING", payload: true });
         dispatch({ type: "ERROR", payload: null });
         await addLancamento(SHEET_ID, l);
-        dispatch({ type: "ADD_LANCAMENTO", payload: l });
         return true;
       } catch (e) {
-        dispatch({ type: "ERROR", payload: (e as Error).message });
+        dispatch({
+          type: "ERROR",
+          payload: `Salvo localmente, mas falha ao sincronizar planilha: ${(e as Error).message}`,
+        });
         return false;
       } finally {
         dispatch({ type: "SAVING", payload: false });

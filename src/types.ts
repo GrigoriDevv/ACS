@@ -21,7 +21,13 @@ export interface LancamentoFinanceiro {
   categoria: string;
   descricao: string;
   valor: number;
+  /** Nome do responsável (espelha funcionarioNome quando vinculado) */
   responsavel: string;
+  funcionarioId: string;
+  funcionarioNome: string;
+  funcionarioCargo: string;
+  funcionarioEmail: string;
+  funcionarioTelefone: string;
   documento: string;
   _rowNumber: number;
 }
@@ -51,7 +57,14 @@ export interface Movimentacao {
   quantidade: number;
   saldoAnterior: number;
   saldoPosterior: number;
+  /** Nome do responsável (espelha funcionarioNome quando vinculado) */
   responsavel: string;
+  /** Dados do funcionário vinculado ao lançamento */
+  funcionarioId: string;
+  funcionarioNome: string;
+  funcionarioCargo: string;
+  funcionarioEmail: string;
+  funcionarioTelefone: string;
   motivo: string;
   documento: string;
 }

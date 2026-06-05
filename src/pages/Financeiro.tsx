@@ -1,5 +1,8 @@
 import { useState, type FormEvent } from "react";
 import type { AdminHook } from "../hooks/useAdmin";
+import type { Funcionario } from "../types";
+import { useFormDraft } from "../hooks/useFormDraft";
+import FuncionarioSelect from "../components/FuncionarioSelect";
 
 const CATS_ENTRADA = ["Serviços", "Venda de Peças", "Garantia/Reembolso", "Comissão", "Outros"];
 const CATS_SAIDA   = ["Salários/Pagamentos", "Materiais/Peças", "Ferramentas/Equipamentos",
@@ -7,7 +10,7 @@ const CATS_SAIDA   = ["Salários/Pagamentos", "Materiais/Peças", "Ferramentas/E
 
 type Props = Pick<AdminHook,
   "lancamentos" | "saving" | "totalEntradas" | "totalSaidas" | "saldo" | "registrarLancamento"
->;
+> & { funcionarios: Funcionario[] };
 
 function fmt(iso: string) {
   if (!iso) return "—";
@@ -18,19 +21,22 @@ function fmtMoney(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+const EMPTY_FORM = {
+  tipo: "entrada" as "entrada" | "saida",
+  categoria: "",
+  descricao: "",
+  valor: "",
+  funcionarioId: "",
+  responsavel: "",
+  documento: "",
+};
+
 export default function Financeiro({
-  lancamentos, saving, totalEntradas, totalSaidas, saldo, registrarLancamento,
+  lancamentos, saving, totalEntradas, totalSaidas, saldo, registrarLancamento, funcionarios,
 }: Props) {
   const [showForm, setShowForm]   = useState(false);
   const [tipoFilter, setTipoFilter] = useState<"todos" | "entrada" | "saida">("todos");
-  const [form, setForm] = useState({
-    tipo: "entrada" as "entrada" | "saida",
-    categoria: "",
-    descricao: "",
-    valor: "",
-    responsavel: "",
-    documento: "",
-  });
+  const { form, setForm, reset } = useFormDraft("financeiro", EMPTY_FORM);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -39,11 +45,12 @@ export default function Financeiro({
       categoria:   form.categoria,
       descricao:   form.descricao,
       valor:       parseFloat(form.valor.replace(",", ".")) || 0,
+      funcionarioId: form.funcionarioId || undefined,
       responsavel: form.responsavel,
       documento:   form.documento,
     });
     if (ok) {
-      setForm({ tipo: "entrada", categoria: "", descricao: "", valor: "", responsavel: "", documento: "" });
+      reset();
       setShowForm(false);
     }
   }
@@ -152,15 +159,15 @@ export default function Financeiro({
                   placeholder="Descreva o lançamento..."
                 />
               </div>
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", display: "block", marginBottom: 5 }}>Responsável</label>
-                <input
-                  className="input"
-                  value={form.responsavel}
-                  onChange={(e) => setForm({ ...form, responsavel: e.target.value })}
-                  placeholder="Nome do responsável"
-                />
-              </div>
+              <FuncionarioSelect
+                variant="admin"
+                funcionarios={funcionarios}
+                funcionarioId={form.funcionarioId}
+                responsavel={form.responsavel}
+                onFuncionarioId={(id) => setForm({ ...form, funcionarioId: id })}
+                onResponsavel={(name) => setForm({ ...form, responsavel: name })}
+                requireResponsavel={false}
+              />
               <div>
                 <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", display: "block", marginBottom: 5 }}>Documento / Referência</label>
                 <input
@@ -215,7 +222,10 @@ export default function Financeiro({
               <th>Categoria</th>
               <th>Descrição</th>
               <th>Valor</th>
-              <th>Responsável</th>
+              <th>Funcionário</th>
+              <th>Cargo</th>
+              <th>E-mail</th>
+              <th>Telefone</th>
               <th>Documento</th>
             </tr>
           </thead>
@@ -236,7 +246,10 @@ export default function Financeiro({
                 }}>
                   {l.tipo === "saida" ? "−" : "+"}{fmtMoney(l.valor)}
                 </td>
-                <td style={{ fontSize: 12 }}>{l.responsavel || "—"}</td>
+                <td style={{ fontSize: 12, fontWeight: 500 }}>{l.funcionarioNome || l.responsavel || "—"}</td>
+                <td style={{ fontSize: 12, color: "var(--text-muted)" }}>{l.funcionarioCargo || "—"}</td>
+                <td style={{ fontSize: 12 }}>{l.funcionarioEmail || "—"}</td>
+                <td style={{ fontSize: 12 }}>{l.funcionarioTelefone || "—"}</td>
                 <td style={{ fontSize: 12, fontFamily: "monospace" }}>{l.documento || "—"}</td>
               </tr>
             ))}

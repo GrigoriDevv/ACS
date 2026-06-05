@@ -1,25 +1,23 @@
 import { useState } from "react";
 import type { InventoryHook } from "../hooks/useInventory";
+import { useFormDraft } from "../hooks/useFormDraft";
 
 const UNITS = ["UN", "KG", "L", "M", "M²", "CX", "PCT", "PAR", "RL"];
 
+const EMPTY = {
+  nome: "",
+  sku: "",
+  categoria: "",
+  unidade: "UN",
+  estoqueMinimo: "0",
+  localizacao: "",
+  ativo: true,
+};
+
 export default function NewProduct({ registerProduct }: InventoryHook) {
-  const [form, setForm] = useState({
-    nome: "",
-    sku: "",
-    categoria: "",
-    unidade: "UN",
-    estoqueMinimo: "0",
-    localizacao: "",
-    ativo: true,
-  });
+  const { form, setField, reset } = useFormDraft("new_product", EMPTY);
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "ok" | "err"; msg: string } | null>(null);
-
-  const set =
-    (field: string) =>
-    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
-      setForm((prev) => ({ ...prev, [field]: e.target.value }));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,7 +34,7 @@ export default function NewProduct({ registerProduct }: InventoryHook) {
         ativo: form.ativo,
       });
       setFeedback({ type: "ok", msg: `Produto "${form.nome}" cadastrado com sucesso!` });
-      setForm({ nome: "", sku: "", categoria: "", unidade: "UN", estoqueMinimo: "0", localizacao: "", ativo: true });
+      reset();
     } catch (err) {
       setFeedback({ type: "err", msg: (err as Error).message });
     } finally {
@@ -47,6 +45,9 @@ export default function NewProduct({ registerProduct }: InventoryHook) {
   return (
     <div>
       <h2 style={{ marginBottom: 16 }}>Cadastrar Novo Produto</h2>
+      <p style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 16 }}>
+        O formulário é salvo automaticamente no navegador enquanto você preenche.
+      </p>
 
       {feedback && (
         <div className={`alert ${feedback.type === "ok" ? "success" : "error"}`} style={{ marginBottom: 16 }}>
@@ -58,7 +59,7 @@ export default function NewProduct({ registerProduct }: InventoryHook) {
         <form onSubmit={handleSubmit} className="form-grid">
           <div className="form-group">
             <label>Nome *</label>
-            <input type="text" value={form.nome} onChange={set("nome")} required />
+            <input type="text" value={form.nome} onChange={setField("nome")} required />
           </div>
 
           <div className="form-group">
@@ -66,7 +67,7 @@ export default function NewProduct({ registerProduct }: InventoryHook) {
             <input
               type="text"
               value={form.sku}
-              onChange={set("sku")}
+              onChange={setField("sku")}
               placeholder="Código interno único"
               style={{ textTransform: "uppercase" }}
               required
@@ -78,14 +79,14 @@ export default function NewProduct({ registerProduct }: InventoryHook) {
             <input
               type="text"
               value={form.categoria}
-              onChange={set("categoria")}
+              onChange={setField("categoria")}
               placeholder="ex: Limpeza, EPI, Elétrico..."
             />
           </div>
 
           <div className="form-group">
             <label>Unidade *</label>
-            <select value={form.unidade} onChange={set("unidade")} required>
+            <select value={form.unidade} onChange={setField("unidade")} required>
               {UNITS.map((u) => (
                 <option key={u} value={u}>{u}</option>
               ))}
@@ -99,7 +100,7 @@ export default function NewProduct({ registerProduct }: InventoryHook) {
               min="0"
               step="0.01"
               value={form.estoqueMinimo}
-              onChange={set("estoqueMinimo")}
+              onChange={setField("estoqueMinimo")}
             />
             <span style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4, display: "block" }}>
               Alerta é gerado quando o estoque cai abaixo deste valor
@@ -111,7 +112,7 @@ export default function NewProduct({ registerProduct }: InventoryHook) {
             <input
               type="text"
               value={form.localizacao}
-              onChange={set("localizacao")}
+              onChange={setField("localizacao")}
               placeholder="ex: Prateleira A3, Depósito 2..."
             />
           </div>

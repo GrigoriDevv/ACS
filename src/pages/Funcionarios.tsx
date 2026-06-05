@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import type { AdminHook } from "../hooks/useAdmin";
+import { useFormDraft } from "../hooks/useFormDraft";
 
 const CARGOS = [
   "Técnico de Refrigeração", "Técnico de Eletrodomésticos", "Auxiliar Técnico",
@@ -19,13 +20,15 @@ function fmtMoney(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+const EMPTY_FORM = {
+  nome: "", cargo: "", email: "", telefone: "", salario: "", status: "ativo" as const,
+};
+
 export default function Funcionarios({
   funcionarios, saving, registrarFuncionario, toggleFuncionarioStatus,
 }: Props) {
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({
-    nome: "", cargo: "", email: "", telefone: "", salario: "", status: "ativo" as const,
-  });
+  const { form, setForm, reset } = useFormDraft("funcionario", EMPTY_FORM);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -38,7 +41,7 @@ export default function Funcionarios({
       status:   "ativo",
     });
     if (ok) {
-      setForm({ nome: "", cargo: "", email: "", telefone: "", salario: "", status: "ativo" });
+      reset();
       setShowForm(false);
     }
   }
@@ -162,6 +165,7 @@ export default function Funcionarios({
         <table>
           <thead>
             <tr>
+              <th>ID</th>
               <th>Nome</th>
               <th>Cargo</th>
               <th>E-mail</th>
@@ -175,6 +179,7 @@ export default function Funcionarios({
           <tbody>
             {funcionarios.map((f) => (
               <tr key={f.id} style={{ opacity: f.status === "inativo" ? 0.55 : 1 }}>
+                <td style={{ fontSize: 11, fontFamily: "monospace", color: "var(--text-muted)" }}>{f.id.slice(0, 8)}…</td>
                 <td style={{ fontWeight: 500 }}>{f.nome}</td>
                 <td style={{ color: "var(--text-muted)", fontSize: 12 }}>{f.cargo}</td>
                 <td style={{ fontSize: 12 }}>{f.email || "—"}</td>

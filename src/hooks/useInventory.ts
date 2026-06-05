@@ -2,8 +2,10 @@ import { useCallback, useEffect, useReducer } from "react";
 import { getToken, revokeToken, isConfigured } from "../api/auth";
 import {
   ensureSheets,
+  ensureAdminSheets,
   loadProdutos,
   loadMovimentacoes,
+  loadFuncionarios,
   addProduto,
   updateProduto,
   addMovimentacao,
@@ -18,8 +20,10 @@ import {
 import { SEED_PRODUCTS } from "../data/seedProducts";
 import { sendLowStockAlert, isEmailConfigured } from "../api/email";
 import { normalizeSpreadsheetId } from "../lib/spreadsheetId";
-import type { Movimentacao, Produto, TipoMovimentacao } from "../types";
+import { loadInventory, saveInventory, loadAdmin, saveAdmin } from "../lib/localStore";
+import type { Funcionario, Movimentacao, Produto, TipoMovimentacao } from "../types";
 import { alertaFromProduto, produtoAbaixoMinimo } from "../types";
+import { snapshotFuncionario, snapshotResponsavel } from "../lib/funcionario";
 
 // ── State ─────────────────────────────────────────────────────────────────────
 interface State {
@@ -34,6 +38,7 @@ interface State {
   emailStatus: string | null;
   produtos: Produto[];
   movimentacoes: Movimentacao[];
+  funcionarios: Funcionario[];
 }
 
 type Action =
@@ -48,6 +53,7 @@ type Action =
   | { type: "EMAIL_STATUS"; payload: string | null }
   | { type: "SET_PRODUTOS"; payload: Produto[] }
   | { type: "SET_MOVIMENTACOES"; payload: Movimentacao[] }
+  | { type: "SET_FUNCIONARIOS"; payload: Funcionario[] }
   | { type: "UPDATE_PRODUTO"; payload: Produto }
   | { type: "ADD_PRODUTO"; payload: Produto }
   | { type: "ADD_MOVIMENTACAO"; payload: Movimentacao };
@@ -65,6 +71,7 @@ function reducer(state: State, action: Action): State {
     case "EMAIL_STATUS":  return { ...state, emailStatus: action.payload };
     case "SET_PRODUTOS":      return { ...state, produtos: action.payload };
     case "SET_MOVIMENTACOES": return { ...state, movimentacoes: action.payload };
+    case "SET_FUNCIONARIOS":  return { ...state, funcionarios: action.payload };
     case "UPDATE_PRODUTO":
       return {
         ...state,
@@ -83,10 +90,11 @@ function reducer(state: State, action: Action): State {
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
 const SHEET_ID = normalizeSpreadsheetId(import.meta.env.VITE_SPREADSHEET_ID as string);
+const cached = loadInventory();
 
 export function useInventory() {
   const [state, dispatch] = useReducer(reducer, {
-    ready: false,
+    ready: cached.produtos.length > 0,
     loading: true,
     colorizing: false,
     seeding: false,
@@ -95,9 +103,15 @@ export function useInventory() {
     sendingEmail: false,
     error: null,
     emailStatus: null,
-    produtos: [],
-    movimentacoes: [],
+    produtos: cached.produtos,
+    movimentacoes: cached.movimentacoes,
+    funcionarios: loadAdmin().funcionarios,
   });
+
+  // Persiste localmente a cada alteração (sem expiração)
+  useEffect(() => {
+    saveInventory(state.produtos, state.movimentacoes);
+  }, [state.produtos, state.movimentacoes]);
 
   // ── Load data ───────────────────────────────────────────────────────────────
   const loadData = useCallback(async () => {
@@ -111,15 +125,32 @@ export function useInventory() {
       // getToken() handles service account JWT automatically
       await getToken();
       await ensureSheets(SHEET_ID);
-      const [prods, movs] = await Promise.all([
+      await ensureAdminSheets(SHEET_ID);
+      const [prods, movs, funcs] = await Promise.all([
         loadProdutos(SHEET_ID),
         loadMovimentacoes(SHEET_ID),
+        loadFuncionarios(SHEET_ID),
       ]);
       dispatch({ type: "SET_PRODUTOS", payload: prods });
       dispatch({ type: "SET_MOVIMENTACOES", payload: movs });
+      dispatch({ type: "SET_FUNCIONARIOS", payload: funcs });
+      saveAdmin(funcs, loadAdmin().lancamentos);
       dispatch({ type: "READY" });
     } catch (e) {
-      dispatch({ type: "ERROR", payload: (e as Error).message });
+      const msg = (e as Error).message;
+      const local = loadInventory();
+      if (local.produtos.length > 0) {
+        dispatch({ type: "SET_PRODUTOS", payload: local.produtos });
+        dispatch({ type: "SET_MOVIMENTACOES", payload: local.movimentacoes });
+        dispatch({ type: "SET_FUNCIONARIOS", payload: loadAdmin().funcionarios });
+        dispatch({
+          type: "ERROR",
+          payload: `Planilha indisponível (${msg}). Exibindo dados salvos localmente.`,
+        });
+        dispatch({ type: "READY" });
+      } else {
+        dispatch({ type: "ERROR", payload: msg });
+      }
     }
   }, []);
 
@@ -168,13 +199,17 @@ export function useInventory() {
         atualizadoEm: now,
         _rowNumber: 0,
       };
+      dispatch({ type: "ADD_PRODUTO", payload: produto });
       try {
         dispatch({ type: "ERROR", payload: null });
         await addProduto(SHEET_ID, produto);
         const prods = await loadProdutos(SHEET_ID);
         dispatch({ type: "SET_PRODUTOS", payload: prods });
       } catch (e) {
-        dispatch({ type: "ERROR", payload: (e as Error).message });
+        dispatch({
+          type: "ERROR",
+          payload: `Salvo localmente, mas falha ao sincronizar planilha: ${(e as Error).message}`,
+        });
         throw e;
       }
     },
@@ -188,6 +223,7 @@ export function useInventory() {
       tipo: TipoMovimentacao;
       quantidade: number;
       responsavel: string;
+      funcionarioId?: string;
       motivo: string;
       documento?: string;
     }) => {
@@ -209,6 +245,16 @@ export function useInventory() {
 
       const now = new Date().toISOString();
 
+      const allFuncs = state.funcionarios.length > 0
+        ? state.funcionarios
+        : loadAdmin().funcionarios;
+      const func = params.funcionarioId
+        ? allFuncs.find((f) => f.id === params.funcionarioId && f.status === "ativo")
+        : undefined;
+      const funcSnap = func
+        ? snapshotFuncionario(func)
+        : snapshotResponsavel(params.responsavel);
+
       const mov: Movimentacao = {
         id: crypto.randomUUID(),
         dataHora: now,
@@ -218,20 +264,24 @@ export function useInventory() {
         quantidade: params.quantidade,
         saldoAnterior,
         saldoPosterior,
-        responsavel: params.responsavel,
+        ...funcSnap,
         motivo: params.motivo,
         documento: params.documento ?? "",
       };
 
       const updated: Produto = { ...produto, estoqueAtual: saldoPosterior, atualizadoEm: now };
 
+      dispatch({ type: "UPDATE_PRODUTO", payload: updated });
+      dispatch({ type: "ADD_MOVIMENTACAO", payload: mov });
+
       try {
         dispatch({ type: "ERROR", payload: null });
         await Promise.all([updateProduto(SHEET_ID, updated), addMovimentacao(SHEET_ID, mov)]);
-        dispatch({ type: "UPDATE_PRODUTO", payload: updated });
-        dispatch({ type: "ADD_MOVIMENTACAO", payload: mov });
       } catch (e) {
-        dispatch({ type: "ERROR", payload: (e as Error).message });
+        dispatch({
+          type: "ERROR",
+          payload: `Salvo localmente, mas falha ao sincronizar planilha: ${(e as Error).message}`,
+        });
         throw e;
       }
 
@@ -244,7 +294,7 @@ export function useInventory() {
         }
       }
     },
-    [state.produtos]
+    [state.produtos, state.funcionarios]
   );
 
   // ── Update stock (ajuste manual) ────────────────────────────────────────────
@@ -271,21 +321,25 @@ export function useInventory() {
         quantidade: novoEstoque,
         saldoAnterior,
         saldoPosterior: novoEstoque,
-        responsavel: "Ajuste manual",
+        ...snapshotResponsavel("Ajuste manual"),
         motivo: "Correção de estoque via tela de produtos",
         documento: "",
       };
 
       const updated: Produto = { ...produto, estoqueAtual: novoEstoque, atualizadoEm: now };
 
+      dispatch({ type: "UPDATE_PRODUTO", payload: updated });
+      dispatch({ type: "ADD_MOVIMENTACAO", payload: mov });
+
       try {
         dispatch({ type: "ERROR", payload: null });
         await Promise.all([updateProduto(SHEET_ID, updated), addMovimentacao(SHEET_ID, mov)]);
-        dispatch({ type: "UPDATE_PRODUTO", payload: updated });
-        dispatch({ type: "ADD_MOVIMENTACAO", payload: mov });
         applyStockColors(SHEET_ID, [updated]).catch(() => null);
       } catch (e) {
-        dispatch({ type: "ERROR", payload: (e as Error).message });
+        dispatch({
+          type: "ERROR",
+          payload: `Salvo localmente, mas falha ao sincronizar planilha: ${(e as Error).message}`,
+        });
         throw e;
       }
     },

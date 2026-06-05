@@ -54,14 +54,17 @@ export default function History({ movimentacoes, produtos }: InventoryHook) {
             <th style={{ textAlign: "right" }}>Qtd</th>
             <th style={{ textAlign: "right" }}>Ant.</th>
             <th style={{ textAlign: "right" }}>Post.</th>
-            <th>Responsável</th>
+            <th>Funcionário</th>
+            <th>Cargo</th>
+            <th>E-mail</th>
+            <th>Telefone</th>
             <th>Motivo</th>
           </tr>
         </thead>
         <tbody>
           {filtered.length === 0 && (
             <tr>
-              <td colSpan={8} style={{ color: "var(--text-muted)", padding: "20px 12px" }}>
+              <td colSpan={11} style={{ color: "var(--text-muted)", padding: "20px 12px" }}>
                 Nenhuma movimentação encontrada.
               </td>
             </tr>
@@ -80,7 +83,10 @@ export default function History({ movimentacoes, produtos }: InventoryHook) {
                 </td>
                 <td style={{ textAlign: "right", color: "var(--text-muted)" }}>{m.saldoAnterior}</td>
                 <td style={{ textAlign: "right", fontWeight: 600 }}>{m.saldoPosterior}</td>
-                <td style={{ fontSize: 12 }}>{m.responsavel}</td>
+                <td style={{ fontSize: 12, fontWeight: 500 }}>{m.funcionarioNome || m.responsavel}</td>
+                <td style={{ fontSize: 12, color: "var(--text-muted)" }}>{m.funcionarioCargo || "—"}</td>
+                <td style={{ fontSize: 12 }}>{m.funcionarioEmail || "—"}</td>
+                <td style={{ fontSize: 12 }}>{m.funcionarioTelefone || "—"}</td>
                 <td style={{ fontSize: 12, color: "var(--text-muted)" }}>{m.motivo}</td>
               </tr>
             );

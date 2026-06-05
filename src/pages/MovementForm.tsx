@@ -1,28 +1,37 @@
 import { useState } from "react";
-import type { TipoMovimentacao } from "../types";
+import type { Funcionario, TipoMovimentacao } from "../types";
 import type { InventoryHook } from "../hooks/useInventory";
+import { useFormDraft } from "../hooks/useFormDraft";
+import FuncionarioSelect from "../components/FuncionarioSelect";
 
 interface Props extends Pick<InventoryHook, "produtos" | "registerMovement"> {
   tipo: TipoMovimentacao;
+  funcionarios: Funcionario[];
 }
 
-export default function MovementForm({ tipo, produtos, registerMovement }: Props) {
-  const [productId, setProductId] = useState("");
-  const [quantity, setQuantity] = useState("");
-  const [responsible, setResponsible] = useState("");
-  const [reason, setReason] = useState("");
-  const [document, setDocument] = useState("");
+const EMPTY = {
+  productId: "",
+  quantity: "",
+  funcionarioId: "",
+  responsible: "",
+  reason: "",
+  document: "",
+};
+
+export default function MovementForm({ tipo, produtos, funcionarios, registerMovement }: Props) {
+  const { form, setForm, setField, reset } = useFormDraft(`movement_${tipo}`, EMPTY);
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "ok" | "err"; msg: string } | null>(null);
 
   const active = produtos.filter((p) => p.ativo);
-  const selected = active.find((p) => p.id === productId);
+  const selected = active.find((p) => p.id === form.productId);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!productId || !quantity || !responsible || !reason) return;
+    if (!form.productId || !form.quantity || !form.reason) return;
+    if (!form.funcionarioId && !form.responsible) return;
 
-    const qty = parseFloat(quantity);
+    const qty = parseFloat(form.quantity);
     if (isNaN(qty) || qty <= 0) {
       setFeedback({ type: "err", msg: "Quantidade inválida. Informe um número maior que zero." });
       return;
@@ -33,19 +42,19 @@ export default function MovementForm({ tipo, produtos, registerMovement }: Props
 
     try {
       await registerMovement({
-        produtoId: productId,
+        produtoId: form.productId,
         tipo,
         quantidade: qty,
-        responsavel: responsible,
-        motivo: reason,
-        documento: document || undefined,
+        funcionarioId: form.funcionarioId || undefined,
+        responsavel: form.responsible,
+        motivo: form.reason,
+        documento: form.document || undefined,
       });
 
       setFeedback({ type: "ok", msg: `${tipo === "entrada" ? "Entrada" : "Saída"} registrada com sucesso!` });
-      setProductId("");
-      setQuantity("");
-      setReason("");
-      setDocument("");
+      const keep = { funcionarioId: form.funcionarioId, responsible: form.responsible };
+      reset();
+      setForm({ ...EMPTY, ...keep });
     } catch (err) {
       setFeedback({ type: "err", msg: (err as Error).message });
     } finally {
@@ -60,6 +69,9 @@ export default function MovementForm({ tipo, produtos, registerMovement }: Props
       <h2 style={{ marginBottom: 16 }}>
         Registrar {isInbound ? "Entrada" : "Saída"} de Material
       </h2>
+      <p style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 16 }}>
+        Campos salvos automaticamente no navegador enquanto você preenche.
+      </p>
 
       {feedback && (
         <div className={`alert ${feedback.type === "ok" ? "success" : "error"}`} style={{ marginBottom: 16 }}>
@@ -71,7 +83,7 @@ export default function MovementForm({ tipo, produtos, registerMovement }: Props
         <form onSubmit={handleSubmit} className="form-grid">
           <div className="form-group">
             <label>Produto *</label>
-            <select value={productId} onChange={(e) => setProductId(e.target.value)} required>
+            <select value={form.productId} onChange={setField("productId")} required>
               <option value="">Selecione um produto...</option>
               {active.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -87,8 +99,8 @@ export default function MovementForm({ tipo, produtos, registerMovement }: Props
               type="number"
               min="0.01"
               step="0.01"
-              value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
+              value={form.quantity}
+              onChange={setField("quantity")}
               required
             />
             {selected && tipo === "saida" && (
@@ -101,23 +113,20 @@ export default function MovementForm({ tipo, produtos, registerMovement }: Props
             )}
           </div>
 
-          <div className="form-group">
-            <label>Responsável *</label>
-            <input
-              type="text"
-              value={responsible}
-              onChange={(e) => setResponsible(e.target.value)}
-              placeholder="Nome ou e-mail do operador"
-              required
-            />
-          </div>
+          <FuncionarioSelect
+            funcionarios={funcionarios}
+            funcionarioId={form.funcionarioId}
+            responsavel={form.responsible}
+            onFuncionarioId={(id) => setForm({ ...form, funcionarioId: id })}
+            onResponsavel={(name) => setForm({ ...form, responsible: name })}
+          />
 
           <div className="form-group">
             <label>Documento (NF, OS, pedido...)</label>
             <input
               type="text"
-              value={document}
-              onChange={(e) => setDocument(e.target.value)}
+              value={form.document}
+              onChange={setField("document")}
               placeholder="Opcional"
             />
           </div>
@@ -126,8 +135,8 @@ export default function MovementForm({ tipo, produtos, registerMovement }: Props
             <label>Motivo *</label>
             <input
               type="text"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
+              value={form.reason}
+              onChange={setField("reason")}
               placeholder={
                 isInbound
                   ? "ex: Compra mensal, reposição de estoque..."
