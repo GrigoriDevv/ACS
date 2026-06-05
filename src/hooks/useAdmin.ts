@@ -107,7 +107,7 @@ export function useAdmin() {
 
   // ── Funcionários ────────────────────────────────────────────────────────────
   const registrarFuncionario = useCallback(
-    async (data: Omit<Funcionario, "id" | "criadoEm" | "_rowNumber">) => {
+    async (data: Omit<Funcionario, "id" | "criadoEm" | "_rowNumber">): Promise<boolean> => {
       const f: Funcionario = {
         ...data,
         id: crypto.randomUUID(),
@@ -120,8 +120,10 @@ export function useAdmin() {
         await addFuncionario(SHEET_ID, f);
         const updated = await loadFuncionarios(SHEET_ID);
         dispatch({ type: "SET_FUNCIONARIOS", payload: updated });
+        return true;
       } catch (e) {
         dispatch({ type: "ERROR", payload: (e as Error).message });
+        return false;
       } finally {
         dispatch({ type: "SAVING", payload: false });
       }
@@ -150,7 +152,7 @@ export function useAdmin() {
 
   // ── Financeiro ──────────────────────────────────────────────────────────────
   const registrarLancamento = useCallback(
-    async (data: Omit<LancamentoFinanceiro, "id" | "dataHora" | "_rowNumber">) => {
+    async (data: Omit<LancamentoFinanceiro, "id" | "dataHora" | "_rowNumber">): Promise<boolean> => {
       const l: LancamentoFinanceiro = {
         ...data,
         id: crypto.randomUUID(),
@@ -162,8 +164,10 @@ export function useAdmin() {
         dispatch({ type: "ERROR", payload: null });
         await addLancamento(SHEET_ID, l);
         dispatch({ type: "ADD_LANCAMENTO", payload: l });
+        return true;
       } catch (e) {
         dispatch({ type: "ERROR", payload: (e as Error).message });
+        return false;
       } finally {
         dispatch({ type: "SAVING", payload: false });
       }

@@ -70,7 +70,10 @@ async function refreshSheetIds(spreadsheetId: string): Promise<SheetMeta[]> {
 async function getSheetId(spreadsheetId: string, title: string): Promise<number> {
   if (_sheetIdCache[title] !== undefined) return _sheetIdCache[title];
   await refreshSheetIds(spreadsheetId);
-  return _sheetIdCache[title] ?? 0;
+  if (_sheetIdCache[title] === undefined) {
+    throw new Error(`Aba "${title}" não encontrada na planilha. Execute "Configurar planilha" primeiro.`);
+  }
+  return _sheetIdCache[title];
 }
 
 // ── Criação das abas ──────────────────────────────────────────────────────────
@@ -131,9 +134,11 @@ async function getValues(spreadsheetId: string, range: string): Promise<CellValu
 
 export async function loadProdutos(spreadsheetId: string): Promise<Produto[]> {
   const rows = await getValues(spreadsheetId, `${SHEET_PRODUTOS}!A:K`);
+  // Keep original index (offset +2 for header) before filtering empty rows
   return rows
-    .filter((r) => r[0])
-    .map((r, i) => ({
+    .map((r, i) => ({ r, sheetRow: i + 2 }))
+    .filter(({ r }) => r[0])
+    .map(({ r, sheetRow }) => ({
       id:            str(r[0]),
       nome:          str(r[1]),
       sku:           str(r[2]),
@@ -145,7 +150,7 @@ export async function loadProdutos(spreadsheetId: string): Promise<Produto[]> {
       ativo:         bool(r[8]),
       criadoEm:      str(r[9]),
       atualizadoEm:  str(r[10]),
-      _rowNumber:    i + 2,
+      _rowNumber:    sheetRow,
     }));
 }
 
@@ -264,8 +269,9 @@ export async function ensureAdminSheets(spreadsheetId: string): Promise<void> {
 export async function loadFuncionarios(spreadsheetId: string): Promise<Funcionario[]> {
   const rows = await getValues(spreadsheetId, `${SHEET_FUNCIONARIOS}!A:H`);
   return rows
-    .filter((r) => r[0])
-    .map((r, i) => ({
+    .map((r, i) => ({ r, sheetRow: i + 2 }))
+    .filter(({ r }) => r[0])
+    .map(({ r, sheetRow }) => ({
       id:         str(r[0]),
       nome:       str(r[1]),
       cargo:      str(r[2]),
@@ -274,7 +280,7 @@ export async function loadFuncionarios(spreadsheetId: string): Promise<Funcionar
       salario:    num(r[5]),
       status:     (str(r[6]) || "ativo") as Funcionario["status"],
       criadoEm:   str(r[7]),
-      _rowNumber: i + 2,
+      _rowNumber: sheetRow,
     }));
 }
 
@@ -298,8 +304,9 @@ export async function updateFuncionario(spreadsheetId: string, f: Funcionario): 
 export async function loadLancamentos(spreadsheetId: string): Promise<LancamentoFinanceiro[]> {
   const rows = await getValues(spreadsheetId, `${SHEET_FINANCEIRO}!A:H`);
   return rows
-    .filter((r) => r[0])
-    .map((r, i) => ({
+    .map((r, i) => ({ r, sheetRow: i + 2 }))
+    .filter(({ r }) => r[0])
+    .map(({ r, sheetRow }) => ({
       id:          str(r[0]),
       dataHora:    str(r[1]),
       tipo:        (str(r[2]) || "entrada") as LancamentoFinanceiro["tipo"],
@@ -308,7 +315,7 @@ export async function loadLancamentos(spreadsheetId: string): Promise<Lancamento
       valor:       num(r[5]),
       responsavel: str(r[6]),
       documento:   str(r[7]),
-      _rowNumber:  i + 2,
+      _rowNumber:  sheetRow,
     }))
     .reverse();
 }

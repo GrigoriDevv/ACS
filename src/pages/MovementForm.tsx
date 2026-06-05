@@ -22,6 +22,12 @@ export default function MovementForm({ tipo, produtos, registerMovement }: Props
     e.preventDefault();
     if (!productId || !quantity || !responsible || !reason) return;
 
+    const qty = parseFloat(quantity);
+    if (isNaN(qty) || qty <= 0) {
+      setFeedback({ type: "err", msg: "Quantidade inválida. Informe um número maior que zero." });
+      return;
+    }
+
     setLoading(true);
     setFeedback(null);
 
@@ -29,13 +35,14 @@ export default function MovementForm({ tipo, produtos, registerMovement }: Props
       await registerMovement({
         produtoId: productId,
         tipo,
-        quantidade: parseFloat(quantity),
+        quantidade: qty,
         responsavel: responsible,
         motivo: reason,
         documento: document || undefined,
       });
 
       setFeedback({ type: "ok", msg: `${tipo === "entrada" ? "Entrada" : "Saída"} registrada com sucesso!` });
+      setProductId("");
       setQuantity("");
       setReason("");
       setDocument("");

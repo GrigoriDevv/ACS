@@ -54,14 +54,6 @@ export default function Dashboard({
         </button>
         <button
           className="btn btn-secondary"
-          onClick={colorSpreadsheet}
-          disabled={colorizing || loading}
-          title="Atualiza as cores de alerta de estoque nas abas Produtos e Movimentações"
-        >
-          {colorizing ? "Colorindo..." : "Colorir alertas"}
-        </button>
-        <button
-          className={`btn ${emailConfigured ? "btn-secondary" : "btn-secondary"}`}
           onClick={sendAlertEmail}
           disabled={sendingEmail || alerts.length === 0}
           title={
@@ -109,7 +101,7 @@ export default function Dashboard({
           <div style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 14, lineHeight: 1.6 }}>
             {SEED_PRODUCTS.length} produtos prontos para importar, cobrindo:{" "}
             <strong>{seedCategories.join(", ")}</strong>.
-            O estoque inicial será <strong>0</strong> — registre entradas depois.
+            Cada produto vem com quantidades fictícias de exemplo — ajuste via movimentações.
           </div>
           <button
             className="btn btn-primary"

@@ -29,7 +29,7 @@ export default function Funcionarios({
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    await registrarFuncionario({
+    const ok = await registrarFuncionario({
       nome:     form.nome,
       cargo:    form.cargo,
       email:    form.email,
@@ -37,8 +37,10 @@ export default function Funcionarios({
       salario:  parseFloat(form.salario.replace(",", ".")) || 0,
       status:   "ativo",
     });
-    setForm({ nome: "", cargo: "", email: "", telefone: "", salario: "", status: "ativo" });
-    setShowForm(false);
+    if (ok) {
+      setForm({ nome: "", cargo: "", email: "", telefone: "", salario: "", status: "ativo" });
+      setShowForm(false);
+    }
   }
 
   const ativos   = funcionarios.filter((f) => f.status === "ativo").length;

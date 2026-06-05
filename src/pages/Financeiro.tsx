@@ -34,7 +34,7 @@ export default function Financeiro({
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    await registrarLancamento({
+    const ok = await registrarLancamento({
       tipo:        form.tipo,
       categoria:   form.categoria,
       descricao:   form.descricao,
@@ -42,8 +42,10 @@ export default function Financeiro({
       responsavel: form.responsavel,
       documento:   form.documento,
     });
-    setForm({ tipo: "entrada", categoria: "", descricao: "", valor: "", responsavel: "", documento: "" });
-    setShowForm(false);
+    if (ok) {
+      setForm({ tipo: "entrada", categoria: "", descricao: "", valor: "", responsavel: "", documento: "" });
+      setShowForm(false);
+    }
   }
 
   const cats = form.tipo === "entrada" ? CATS_ENTRADA : CATS_SAIDA;
