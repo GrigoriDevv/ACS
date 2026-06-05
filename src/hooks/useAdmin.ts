@@ -9,6 +9,7 @@ import {
 } from "../api/sheets";
 import type { Funcionario, LancamentoFinanceiro } from "../types";
 import { snapshotFuncionario, snapshotResponsavel } from "../lib/funcionario";
+import { formatSheetsError } from "../lib/sheetsError";
 import { normalizeSpreadsheetId } from "../lib/spreadsheetId";
 import {
   isAdminAuthenticated,
@@ -84,6 +85,13 @@ export function useAdmin() {
 
   // ── Auth ────────────────────────────────────────────────────────────────────
   const login = useCallback((user: string, password: string): boolean => {
+    if (!ADMIN_PASS) {
+      dispatch({
+        type: "ERROR",
+        payload: "Senha admin não configurada. Defina VITE_ADMIN_PASSWORD no .env",
+      });
+      return false;
+    }
     const ok = user === ADMIN_USER && password === ADMIN_PASS;
     if (ok) {
       setAdminAuthenticated(true);
@@ -98,10 +106,20 @@ export function useAdmin() {
   const logout = useCallback(() => {
     setAdminAuthenticated(false);
     dispatch({ type: "AUTH", payload: false });
+    dispatch({ type: "ERROR", payload: null });
   }, []);
+
+  const requireAuth = useCallback((): boolean => {
+    if (!state.authenticated) {
+      dispatch({ type: "ERROR", payload: "Faça login na área Admin para continuar." });
+      return false;
+    }
+    return true;
+  }, [state.authenticated]);
 
   // ── Load ────────────────────────────────────────────────────────────────────
   const loadAdminData = useCallback(async () => {
+    if (!isAdminAuthenticated()) return;
     try {
       dispatch({ type: "LOADING", payload: true });
       dispatch({ type: "ERROR", payload: null });
@@ -113,7 +131,7 @@ export function useAdmin() {
       dispatch({ type: "SET_FUNCIONARIOS", payload: funcs });
       dispatch({ type: "SET_LANCAMENTOS", payload: lancs });
     } catch (e) {
-      const msg = (e as Error).message;
+      const msg = formatSheetsError((e as Error).message);
       const local = loadAdmin();
       if (local.funcionarios.length > 0 || local.lancamentos.length > 0) {
         dispatch({ type: "SET_FUNCIONARIOS", payload: local.funcionarios });
@@ -133,6 +151,7 @@ export function useAdmin() {
   // ── Funcionários ────────────────────────────────────────────────────────────
   const registrarFuncionario = useCallback(
     async (data: Omit<Funcionario, "id" | "criadoEm" | "_rowNumber">): Promise<boolean> => {
+      if (!requireAuth()) return false;
       const f: Funcionario = {
         ...data,
         id: crypto.randomUUID(),
@@ -157,11 +176,12 @@ export function useAdmin() {
         dispatch({ type: "SAVING", payload: false });
       }
     },
-    []
+    [requireAuth],
   );
 
   const toggleFuncionarioStatus = useCallback(
     async (f: Funcionario) => {
+      if (!requireAuth()) return;
       const updated: Funcionario = {
         ...f,
         status: f.status === "ativo" ? "inativo" : "ativo",
@@ -179,7 +199,7 @@ export function useAdmin() {
         dispatch({ type: "SAVING", payload: false });
       }
     },
-    []
+    [requireAuth]
   );
 
   // ── Financeiro ──────────────────────────────────────────────────────────────
@@ -190,6 +210,7 @@ export function useAdmin() {
         responsavel?: string;
       }
     ): Promise<boolean> => {
+      if (!requireAuth()) return false;
       const func = data.funcionarioId
         ? cachedAdmin.funcionarios.find((f) => f.id === data.funcionarioId)
         ?? loadAdmin().funcionarios.find((f) => f.id === data.funcionarioId)
@@ -225,10 +246,8 @@ export function useAdmin() {
         dispatch({ type: "SAVING", payload: false });
       }
     },
-    []
+    [requireAuth]
   );
-
-  // ── Saldos ──────────────────────────────────────────────────────────────────
   const totalEntradas = state.lancamentos
     .filter((l) => l.tipo === "entrada")
     .reduce((s, l) => s + l.valor, 0);

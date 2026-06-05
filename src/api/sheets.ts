@@ -4,6 +4,7 @@
  */
 
 import { getToken } from "./auth";
+import { formatSheetsError } from "../lib/sheetsError";
 import type { Funcionario, LancamentoFinanceiro, Movimentacao, Produto } from "../types";
 
 const BASE = "https://sheets.googleapis.com/v4/spreadsheets";
@@ -50,9 +51,9 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(
-      (err as { error?: { message?: string } }).error?.message ?? res.statusText
-    );
+    const raw =
+      (err as { error?: { message?: string } }).error?.message ?? res.statusText;
+    throw new Error(formatSheetsError(raw));
   }
   return res.json() as Promise<T>;
 }

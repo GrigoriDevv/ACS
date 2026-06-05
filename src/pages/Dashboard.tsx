@@ -19,7 +19,8 @@ export default function Dashboard({
   importSeedProducts,
   resetAndSeed,
   setupSheet,
-}: InventoryHook) {
+  adminAuthenticated,
+}: InventoryHook & { adminAuthenticated: boolean }) {
   const total   = produtos.filter((p) => p.ativo).length;
   const zerados = produtos.filter((p) => p.ativo && p.estoqueAtual === 0).length;
 
@@ -36,22 +37,26 @@ export default function Dashboard({
         <button className="btn btn-secondary" onClick={loadData} disabled={loading}>
           {loading ? "Atualizando..." : "Atualizar dados"}
         </button>
-        <button
-          className="btn btn-secondary"
-          onClick={colorSpreadsheet}
-          disabled={colorizing || loading}
-          title="Aplica formatação condicional de cores na planilha Google Sheets"
-        >
-          {colorizing ? "Colorindo..." : "Colorir planilha"}
-        </button>
-        <button
-          className="btn btn-primary"
-          onClick={setupSheet}
-          disabled={settingUp || loading}
-          title="Cria aba Resumo com fórmulas, aplica formatação profissional e adiciona 3 gráficos na planilha"
-        >
-          {settingUp ? "Configurando planilha..." : "Configurar planilha"}
-        </button>
+        {adminAuthenticated && (
+          <>
+            <button
+              className="btn btn-secondary"
+              onClick={colorSpreadsheet}
+              disabled={colorizing || loading}
+              title="Aplica formatação condicional de cores na planilha Google Sheets"
+            >
+              {colorizing ? "Colorindo..." : "Colorir planilha"}
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={setupSheet}
+              disabled={settingUp || loading}
+              title="Cria aba Resumo com fórmulas, aplica formatação profissional e adiciona 3 gráficos na planilha"
+            >
+              {settingUp ? "Configurando planilha..." : "Configurar planilha"}
+            </button>
+          </>
+        )}
         <button
           className="btn btn-secondary"
           onClick={sendAlertEmail}
@@ -86,8 +91,8 @@ export default function Dashboard({
         </div>
       )}
 
-      {/* ── Importação de produtos de manutenção ── */}
-      {!alreadySeeded && (
+      {/* ── Importação de produtos de manutenção (somente admin) ── */}
+      {!alreadySeeded && adminAuthenticated && (
         <div style={{
           background: "var(--surface)",
           border: "1px solid var(--border)",
@@ -113,7 +118,13 @@ export default function Dashboard({
         </div>
       )}
 
-      {alreadySeeded && (
+      {!alreadySeeded && !adminAuthenticated && (
+        <div className="config-notice" style={{ marginBottom: 24 }}>
+          Para importar o catálogo inicial, acesse <strong>Admin</strong> e faça login.
+        </div>
+      )}
+
+      {alreadySeeded && adminAuthenticated && (
         <div style={{ marginBottom: 20, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <button
             className="btn btn-secondary"

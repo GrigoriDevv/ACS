@@ -20,6 +20,16 @@ const NAV: { id: Page; label: string; icon: string }[] = [
   { id: "new-product", label: "Novo Produto", icon: "+" },
 ];
 
+const PAGE_TITLES: Record<Page, string> = {
+  dashboard:   "Dashboard",
+  products:    "Estoque",
+  inbound:     "Entrada",
+  outbound:    "Saída",
+  history:     "Histórico",
+  "new-product": "Novo Produto",
+  admin:       "Administração",
+};
+
 // ── Tela de configuração incompleta ───────────────────────────────────────────
 function NotConfigured() {
   return (
@@ -58,14 +68,29 @@ VITE_SPREADSHEET_ID=<id-da-planilha>`}
 // ── App principal ─────────────────────────────────────────────────────────────
 export default function App() {
   const [page, setPage] = useState<Page>("dashboard");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const inventory = useInventory();
   const admin     = useAdmin();
 
   if (!isConfigured()) return <NotConfigured />;
 
+  const goTo = (id: Page) => {
+    setPage(id);
+    setSidebarOpen(false);
+  };
+
   return (
     <div className="layout">
-      <nav className="sidebar">
+      {sidebarOpen && (
+        <button
+          type="button"
+          className="sidebar-backdrop"
+          aria-label="Fechar menu"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      <nav className={`sidebar${sidebarOpen ? " open" : ""}`}>
         <div className="sidebar-brand">Estoque</div>
 
         <div className="sidebar-title">Menu</div>
@@ -73,7 +98,7 @@ export default function App() {
           <button
             key={item.id}
             className={`nav-item${page === item.id ? " active" : ""}`}
-            onClick={() => setPage(item.id)}
+            onClick={() => goTo(item.id)}
           >
             <span className="nav-icon" aria-hidden>{item.icon}</span>
             {item.label}
@@ -83,32 +108,54 @@ export default function App() {
           </button>
         ))}
 
-        <div style={{ flex: 1 }} />
-
-        <div className="sidebar-title" style={{ marginTop: 8 }}>Área Admin</div>
+        <div className="sidebar-title" style={{ marginTop: 12 }}>Área Admin</div>
         <button
-          className={`nav-item${page === "admin" ? " active" : ""}`}
-          onClick={() => setPage("admin")}
-          style={{ color: admin.authenticated ? "var(--accent)" : undefined }}
+          className={`nav-item nav-item-admin${page === "admin" ? " active" : ""}`}
+          onClick={() => goTo("admin")}
+          title={admin.authenticated ? "Área administrativa" : "Login necessário — área Admin"}
         >
           <span className="nav-icon">{admin.authenticated ? "🔓" : "🔒"}</span>
-          Admin
-          {admin.authenticated && (
+          Login Admin
+          {admin.authenticated ? (
             <span className="nav-badge" style={{ background: "var(--green)", color: "#000" }}>✓</span>
+          ) : (
+            <span className="nav-badge" style={{ background: "var(--yellow)", color: "#000", fontSize: 10 }}>
+              login
+            </span>
           )}
         </button>
       </nav>
 
-      <main className="main">
+      <div className="content-shell">
+        <header className="topbar">
+          <button
+            type="button"
+            className="btn btn-secondary topbar-menu-btn"
+            onClick={() => setSidebarOpen((v) => !v)}
+            aria-label="Abrir menu"
+          >
+            ☰ Menu
+          </button>
+          <h1 className="topbar-title">{PAGE_TITLES[page]}</h1>
+          <button
+            type="button"
+            className={`btn topbar-admin-btn${page === "admin" ? " btn-primary" : " btn-secondary"}`}
+            onClick={() => goTo("admin")}
+          >
+            {admin.authenticated ? "🔓 Admin" : "🔒 Login Admin"}
+          </button>
+        </header>
+
+        <main className="main">
         {inventory.loading && <div className="loading-bar" />}
 
-        {inventory.error && (
+        {inventory.error && page !== "admin" && (
           <div className="alert error" style={{ marginBottom: 16 }}>
             {inventory.error}
           </div>
         )}
 
-        {page === "dashboard"   && <Dashboard  {...inventory} />}
+        {page === "dashboard"   && <Dashboard  {...inventory} adminAuthenticated={admin.authenticated} />}
         {page === "products"    && <Products   {...inventory} />}
         {page === "inbound"     && (
           <MovementForm tipo="entrada" produtos={inventory.produtos} funcionarios={inventory.funcionarios} registerMovement={inventory.registerMovement} />
@@ -119,7 +166,8 @@ export default function App() {
         {page === "history"     && <History    {...inventory} />}
         {page === "new-product" && <NewProduct {...inventory} />}
         {page === "admin"       && <AdminPanel {...admin} />}
-      </main>
+        </main>
+      </div>
     </div>
   );
 }

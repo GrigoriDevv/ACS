@@ -20,6 +20,7 @@ import {
 import { SEED_PRODUCTS } from "../data/seedProducts";
 import { sendLowStockAlert, isEmailConfigured } from "../api/email";
 import { normalizeSpreadsheetId } from "../lib/spreadsheetId";
+import { formatSheetsError } from "../lib/sheetsError";
 import { loadInventory, saveInventory, loadAdmin, saveAdmin } from "../lib/localStore";
 import type { Funcionario, Movimentacao, Produto, TipoMovimentacao } from "../types";
 import { alertaFromProduto, produtoAbaixoMinimo } from "../types";
@@ -125,11 +126,15 @@ export function useInventory() {
       // getToken() handles service account JWT automatically
       await getToken();
       await ensureSheets(SHEET_ID);
-      await ensureAdminSheets(SHEET_ID);
+      try {
+        await ensureAdminSheets(SHEET_ID);
+      } catch (adminErr) {
+        console.warn("Abas admin:", adminErr);
+      }
       const [prods, movs, funcs] = await Promise.all([
         loadProdutos(SHEET_ID),
         loadMovimentacoes(SHEET_ID),
-        loadFuncionarios(SHEET_ID),
+        loadFuncionarios(SHEET_ID).catch(() => loadAdmin().funcionarios),
       ]);
       dispatch({ type: "SET_PRODUTOS", payload: prods });
       dispatch({ type: "SET_MOVIMENTACOES", payload: movs });
@@ -137,7 +142,7 @@ export function useInventory() {
       saveAdmin(funcs, loadAdmin().lancamentos);
       dispatch({ type: "READY" });
     } catch (e) {
-      const msg = (e as Error).message;
+      const msg = formatSheetsError((e as Error).message);
       const local = loadInventory();
       if (local.produtos.length > 0) {
         dispatch({ type: "SET_PRODUTOS", payload: local.produtos });
